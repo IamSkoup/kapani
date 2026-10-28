@@ -1211,6 +1211,7 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 <link rel="stylesheet" href="assets/kapani-v10.css?v=13">
 <link rel="stylesheet" href="assets/kapani-v14-fixes.css?v=15">
 <link rel="stylesheet" href="assets/kapani-v16.css?v=16">
+<link rel="stylesheet" href="assets/kapani-v18-business.css?v=18">
 </head>
 <body>
 
@@ -2645,9 +2646,10 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
                 <div class="delivery-choice-note">Список активных бизнесов с товарами.</div>
             </div>
             <div class="delivery-choice-box">
-                <div class="delivery-choice-label">📦 Товар бизнеса</div>
-                <select id="deliveryOrderBizProduct"></select>
-                <div class="delivery-choice-note">Выберите конкретный товар из каталога бизнеса.</div>
+                <div class="delivery-choice-label">Корзина товаров</div>
+                <select id="deliveryOrderBizProduct" hidden aria-hidden="true" tabindex="-1"></select>
+                <button type="button" class="btn btn-ghost" onclick="kpOpenDeliveryCartCatalog()">Выбрать товары и количество</button>
+                <div id="deliveryCartSummary" class="delivery-cart-summary" aria-live="polite">Добавьте товары из каталога бизнеса.</div>
             </div>
         </div>
 
@@ -2838,8 +2840,8 @@ window.kapaniLoadLeaflet = (function(){
 <script src="./config.js"></script>
 <script src="./functions/subscription-config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8" defer></script>
-<script src="./assets/supabase-bridge-classic.js" defer></script>
-<script src="./assets/kapani-main-classic.js?v=16" defer></script>
+<script src="./assets/supabase-bridge-classic.js?v=17" defer></script>
+<script src="./assets/kapani-main-classic.js?v=18" defer></script>
 
 <script>
 // ═══════════════════════════════════════════════════
@@ -4156,6 +4158,6 @@ window.kapaniLoadLeaflet = (function(){
 <script src="./assets/kapani-ui.js" defer></script>
 <script src="./assets/kapani-icons.js" defer></script>
 <script src="./assets/kapani-season-classic.js" defer></script>
-<script src="./assets/kapani-finishes.js?v=9" defer></script>
+<script src="./assets/kapani-finishes.js?v=18" defer></script>
 </body>
 </html>

@@ -40,7 +40,12 @@ async function ensureAuth(){
     if(!authInstance) authInstance = {currentUser:null};
     authModule = { signOut: () => supabase.auth.signOut() };
     const {data,error}=await supabase.auth.getUser();
-    if(error && !/session missing/i.test(String(error.message))) console.debug('[Kapani auth]',error.message);
+    // A failed network request is not evidence that the user signed out.
+    // Preserve the last verified identity and let startup retry the check.
+    if(error && !/session missing/i.test(String(error.message))){
+        console.debug('[Kapani auth]',error.message);
+        throw error;
+    }
     const signedUser=data?.user;
     if(!signedUser){
         kapaniVerifiedIdentity=null;
@@ -53,7 +58,10 @@ async function ensureAuth(){
     if(!verifiedNick){
         const {data:owner,error:profileError}=await supabase.from('kp_profiles')
             .select('nickname').eq('user_id',signedUser.id).maybeSingle();
-        if(profileError) console.debug('[Kapani auth] profile identity:',profileError.message);
+        if(profileError){
+            console.debug('[Kapani auth] profile identity:',profileError.message);
+            throw profileError;
+        }
         verifiedNick=owner?.nickname||null;
         if(verifiedNick) kapaniVerifiedIdentity={id:signedUser.id,nick:verifiedNick};
     }
@@ -4672,80 +4680,38 @@ window.quitJob = async function(){
 
         // ── Применяем изменения ────────────────────────────────────────
         try {
-            // 1) Удаляем из бизнеса если нужно
+            // Employment and municipal roles are protected server data. A single
+            // authenticated RPC updates the profile and business membership in
+            // one database transaction; a browser-side profile patch is denied.
+            const {data:quitResult,error:quitError} = await supabase.rpc('kp_quit_job', {
+                p_employment_id: targetEmp.id
+            });
+            if(quitError) throw new Error(quitError.message || 'Не удалось уволиться');
+
+            // A successful server commit must stay successful even if the next
+            // profile fetch encounters a temporary connection failure.
+            let localFreshUser = {...u,employments:quitResult.employments,
+                job:quitResult.job,displayJob:quitResult.displayJob};
+            try {
+                const freshSnap = await get(userRef(nick));
+                if(freshSnap.exists()) localFreshUser = freshSnap.val();
+            }catch(refreshError){ console.warn('[quitJob refresh]',refreshError); }
             if(targetEmp.type === 'business' && targetEmp.bizId){
-                try {
-                    await update(bizItemRef(targetEmp.bizId), { [`employees/${nick}`]: null });
-                } catch(e){ console.warn('[quitJob biz remove]', e); }
+                const cachedBusiness = window.allBusinessesCache?.[targetEmp.bizId];
+                if(cachedBusiness?.employees) delete cachedBusiness.employees[nick];
             }
-
-            // 2) Новый список employments без уволенной записи
-            // Каждый элемент пересоздаём через makeEmpEntry — гарантия отсутствия undefined
-            const newEmps = allEmps
-                .filter(e => e.id !== targetEmp.id)
-                .map(e => makeEmpEntry(e));
-
-            // 3) Вычисляем новую основную мун. должность
-            const remainingMuni = newEmps.filter(e => e.type === 'municipal');
-            const newMuniJob = remainingMuni.length > 0 ? remainingMuni[0].role : 'Житель';
-
-            // 4) Формируем patch — все значения явно определены, без undefined
-            const activeDisplay = newEmps.find(e => e.role && e.role === u.displayJob) || newEmps[0] || null;
-            const patch = {
-                employments: newEmps,
-                // displayJob is only valid while the corresponding employment exists.
-                // Never keep the fired role as a stale profile label.
-                displayJob: activeDisplay ? activeDisplay.role : null,
-                // Legacy municipal role must also be recalculated independently of the
-                // fired role. Business employment must never keep an old municipal job.
-                job: remainingMuni.length > 0 ? remainingMuni[0].role : 'Житель'
-            };
-
-            if(targetEmp.type === 'municipal'){
-                patch.job = newMuniJob;
-                if(remainingMuni.length === 0){
-                    patch.jobApplicationStatus = null;
-                    patch.appliedJob = null;
-                }
-            }
-
-            // 5) Доп. сброс по роли
-            if(targetEmp.role === 'Водитель' || targetEmp.role === 'Доставщик'){
-                patch.vehicle = '';
-            }
-            if(targetEmp.role === (window.JOB_JANITOR || 'Уборщик')){
-                patch.janitorTaskDate = '';
-                patch.janitorSubmissionId = '';
-                patch.janitorSubmissionStatus = '';
-                patch.janitorProof = '';
-                patch.janitorComment = '';
-            }
-            if(targetEmp.role === JOB_ADVERTISER){
-                patch.advertiserSalaryPaidThroughWeek = advertiserWeekKey();
-            }
-            const securityRoles = ['Полицейский','КСБ','Охранник'];
-            if(securityRoles.includes(targetEmp.role) && remainingMuni.every(e => !securityRoles.includes(e.role))){
-                patch.securityBadge = null;
-            }
-
-            // 6) Финальная очистка patch от undefined перед отправкой
-            const safePatch = stripUndefined(patch);
-
-            // 7) Атомарное обновление Firebase
-            await update(userRef(nick), safePatch);
-            const localFreshUser = { ...u, ...safePatch };
             allUsersCache[nick] = localFreshUser;
             window.allUsersCache = allUsersCache;
             try { updateHeader(localFreshUser); } catch(e) {}
 
             toast(`🚪 Вы уволились с «${targetEmp.role}»`, 'green');
 
-            // 8) Обновляем UI — без вызова renderProfile (избегаем рекурсии)
+            // Update the current view without recursively rendering the profile.
             try {
                 const quitBtn = document.getElementById('quitJobBtn');
-                if(quitBtn) quitBtn.style.display = newEmps.length > 0 ? 'block' : 'none';
+                if(quitBtn) quitBtn.style.display = collectEmploymentsFromData(localFreshUser,nick).length > 0 ? 'block' : 'none';
                 const jobEl = document.getElementById('profileJobLabel') || document.querySelector('.profile-job');
-                if(jobEl) jobEl.textContent = patch.displayJob || patch.job || 'Житель';
+                if(jobEl) jobEl.textContent = getDisplayJobLabel(localFreshUser,nick);
             } catch(uiErr){ /* ignore */ }
 
             try {
@@ -4760,7 +4726,7 @@ window.quitJob = async function(){
 
         } catch(e){
             console.error('[quitJob update]', e);
-            toast('❌ Не удалось уволиться: ' + ((e && (e.message || e.code)) || 'ошибка Firebase'), 'red');
+            toast('❌ Не удалось уволиться: ' + ((e && (e.message || e.code)) || 'ошибка сервера'), 'red');
         }
     } catch(outer){
         console.error('[quitJob outer]', outer);
@@ -10515,14 +10481,17 @@ window.addBizToCart = async function(bizId, prodId){
 window.changeBizCartQty = function(bizId, prodId, delta){
     const cart = getBizCart(bizId);
     if(!cart[prodId]) return;
-    cart[prodId].qty = Math.max(1, (parseInt(cart[prodId].qty||1,10) + Number(delta||0)));
+    const nextQty = parseInt(cart[prodId].qty||1,10) + Number(delta||0);
+    if(nextQty <= 0) delete cart[prodId];
+    else cart[prodId].qty = Math.min(100,nextQty);
     if(currentBizDetailData && currentBizId === bizId) renderBizDetailProducts(currentBizDetailData.products||{}, currentBizDetailData, currentBizDetailData.owner===currentNick);
 };
 window.setBizCartQty = function(bizId, prodId, value){
     const cart = getBizCart(bizId);
     if(!cart[prodId]) return;
-    const q = Math.max(1, parseInt(value||'1',10)||1);
-    cart[prodId].qty = q;
+    const q = Math.max(0, Math.min(100, parseInt(value,10)||0));
+    if(q===0) delete cart[prodId];
+    else cart[prodId].qty=q;
     if(currentBizDetailData && currentBizId === bizId) renderBizDetailProducts(currentBizDetailData.products||{}, currentBizDetailData, currentBizDetailData.owner===currentNick);
 };
 window.clearBizCart = function(bizId){
@@ -10843,8 +10812,11 @@ window.clearBizComplaintsAndRequests=async function(bizId){
     if(!bizId) return;
     if(!confirm('Удалить все жалобы и запросы, накопленные у этого бизнеса? Это нельзя отменить.')) return;
     try{
-        await remove(ref(db, `bizComplaints/${bizId}`));
-        toast('✅ Жалобы и запросы очищены','green');
+        const {data,error}=await supabase.rpc('kp_business_inbox_clear_v22',{
+            p_biz:bizId,p_kind:'complaints'
+        });
+        if(error)throw error;
+        toast(data?.deleted ? `Удалено сообщений: ${data.deleted}` : 'Жалоб и запросов больше нет','green');
         await renderBizComplaints(bizId);
     }catch(e){ toast('❌ Не удалось очистить сообщения: '+(e?.message||'ошибка'),'red'); }
 };
@@ -10852,8 +10824,11 @@ window.clearBizJobApps=async function(bizId){
     if(!bizId) return;
     if(!confirm('Удалить все заявки на работу этого бизнеса? Это нельзя отменить.')) return;
     try{
-        await remove(ref(db, `bizJobApps/${bizId}`));
-        toast('✅ Заявки на работу очищены','green');
+        const {data,error}=await supabase.rpc('kp_business_inbox_clear_v22',{
+            p_biz:bizId,p_kind:'applications'
+        });
+        if(error)throw error;
+        toast(data?.deleted ? `Удалено заявок: ${data.deleted}` : 'Заявок больше нет','green');
         await renderOwnerJobApps(bizId);
     }catch(e){ toast('❌ Не удалось очистить заявки: '+(e?.message||'ошибка'),'red'); }
 };
@@ -10884,8 +10859,8 @@ function renderOwnerEmployees(b){
     el.innerHTML = emps.map(([nick,e])=>`
         <div class="biz-employee-row" onclick="openUserProfile('${jsEsc(nick)}')" style="cursor:pointer;">
             <img src="${escHtml(safeAvatar(nick))}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;">
-            <div style="flex:1;">
-                <div style="font-weight:900;font-size:14px;">${escHtml(nick)}</div>
+            <div class="biz-employee-info" style="flex:1;min-width:0;">
+                <div class="biz-employee-nick" style="font-weight:900;font-size:14px;">${escHtml(nick)}</div>
                 <div style="font-size:11px;color:var(--primary);">${escHtml(getBizEmployeeRoleName(e))}</div>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); openUserProfile('${jsEsc(nick)}')" style="font-size:11px;">👤 Профиль</button>
@@ -12089,35 +12064,36 @@ async function bootstrapKapaniAuthAndApp(){
         return;
     }
 
+    const expectedNick=currentNick;
     try{
-        // Initialize Firebase Auth and wait for its persisted state before the app shell
-        // starts. A null currentUser here is only meaningful after auth initialization.
-        const auth = await ensureAuth();
-        await waitForFirebaseAuthUser(8000);
+        // Do not erase saved login information on a single network/lock error.
+        // Supabase restores persisted tokens itself; getUser validates identity.
+        const auth = await withKapaniAuthRetry(()=>ensureAuth(),'startup session',3);
+        if(currentNick!==expectedNick) return;
 
-        if(auth.currentUser?.uid === currentNick){
+        if(auth.currentUser?.uid === expectedNick){
             console.info('[Kapani auth] verified Supabase session restored:', auth.currentUser.uid);
         }else if(_kapaniSessionPassword){
             try{
                 await requireKapaniServerSession(8000);
             }catch(e){
                 console.warn('[Kapani auth] startup session recovery:', e?.message || e);
-                scheduleKapaniServerSessionRetry(currentNick);
+                scheduleKapaniServerSessionRetry(expectedNick);
+                throw e;
             }
         }else{
-            console.warn('[Kapani auth] Supabase session missing; requiring a fresh login');
-            localStorage.removeItem('kp_s');
-            localStorage.removeItem('kp_auth');
-            sessionStorage.removeItem('kp_s');
-            currentNick=null;
-            syncCurrentNick();
+            console.warn('[Kapani auth] Supabase session unavailable; showing login without deleting saved identity');
             hideLoadingSafe();
             return;
         }
     }catch(e){
-        // Do not block the whole application on a temporary Auth initialization race.
-        // Protected actions will use the same single-flight recovery helper later.
         console.warn('[Kapani auth] startup init:', e?.message || e);
+        hideLoadingSafe();
+        // Never render the protected app before the server verifies the nick.
+        // Retry quietly when a slow/unstable connection prevented validation.
+        if(currentNick===expectedNick)
+            setTimeout(()=>{ if(!appStarted && currentNick===expectedNick) void bootstrapKapaniAuthAndApp(); },5000);
+        return;
     }
 
     try {
@@ -13281,16 +13257,21 @@ window.updateDeliveryBizProducts = function() {
 };
 
 let deliveryBusinessMapObj=null, deliveryBusinessMapBusinessMarker=null, deliveryBusinessMapClientMarker=null, deliveryBusinessMapLine=null;
+let deliveryBusinessMapSignature='';
 async function renderBusinessDeliveryMap(){
     const card=qs('deliveryBusinessMapCard'), host=qs('deliveryBusinessMap');
     if(!card||!host) return;
     const source=qs('deliveryOrderSource')?.value||'business';
-    if(source!=='business'){ card.style.display='none'; if(deliveryBusinessMapObj){try{deliveryBusinessMapObj.remove()}catch(e){} deliveryBusinessMapObj=null;} return; }
+    if(source!=='business'){ card.style.display='none';deliveryBusinessMapSignature=''; if(deliveryBusinessMapObj){try{deliveryBusinessMapObj.remove()}catch(e){} deliveryBusinessMapObj=null;} return; }
     const bizId=qs('deliveryOrderBiz')?.value||'', b=(allBusinessesCache||{})[bizId];
-    const dLat=Number(qs('deliveryOrderLat')?.value), dLng=Number(qs('deliveryOrderLng')?.value);
+    const rawDLat=qs('deliveryOrderLat')?.value,rawDLng=qs('deliveryOrderLng')?.value;
+    const dLat=Number(rawDLat), dLng=Number(rawDLng);
     const bLat=Number(b?.lat), bLng=Number(b?.lng);
-    if(!b||!Number.isFinite(bLat)||!Number.isFinite(bLng)||!Number.isFinite(dLat)||!Number.isFinite(dLng)){ card.style.display='none'; if(deliveryBusinessMapObj){try{deliveryBusinessMapObj.remove()}catch(e){} deliveryBusinessMapObj=null;} return; }
+    if(!b||!point(rawDLat,rawDLng)||!point(b.lat,b.lng)){ card.style.display='none';deliveryBusinessMapSignature=''; if(deliveryBusinessMapObj){try{deliveryBusinessMapObj.remove()}catch(e){} deliveryBusinessMapObj=null;} return; }
     card.style.display='block';
+    const signature=[bizId,rawDLat,rawDLng].join('|');
+    if(deliveryBusinessMapSignature===signature)return;
+    deliveryBusinessMapSignature=signature;
     await window.kapaniLoadLeaflet();
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
     if(deliveryBusinessMapObj){try{deliveryBusinessMapObj.remove()}catch(e){}}
@@ -13305,7 +13286,7 @@ async function renderBusinessDeliveryMap(){
 }
 
 window.updateDeliverySummary = function() {
-    renderBusinessDeliveryMap().catch(e=>console.warn('[delivery business map]',e));
+    renderBusinessDeliveryMap().catch(e=>{deliveryBusinessMapSignature='';console.warn('[delivery business map]',e);});
     const summary = qs('deliverySelectionSummary');
     if (!summary) return;
     const source = qs('deliveryOrderSource')?.value || 'business';
@@ -13547,14 +13528,19 @@ window.cancelCustomDelivery=async function(orderId){
 
 async function renderDeliveryCustomOrders(){
     const uSnap=await get(userRef(currentNick)); if(!uSnap.exists())return;
-    const u=uSnap.val(); if(u.job!=='Доставщик'&&currentNick!==ADMIN)return;
+    const u=uSnap.val(); if(!hasMunicipalJob(u,'Доставщик')&&currentNick!==ADMIN)return;
     const all=(await get(deliveryCustomOrdersRef())).val()||{};
     const waiting=Object.values(all).filter(o=>o.status==='waiting');
     const proposed=Object.values(all).filter(o=>o.status==='price_proposed'&&o.client!==currentNick);
     const myActive=Object.values(all).filter(o=>o.worker===currentNick&&['client_confirmed','in_progress','delivered'].includes(o.status));
     const delivList=qs('deliveryList'); if(!delivList)return;
-    const pool=[...waiting,...proposed,...myActive.filter(o=>!waiting.includes(o)&&!proposed.includes(o))];
-    if(!pool.length)return;
+    // A dedicated host is replaced on each refresh. Appending directly to the
+    // worker list previously duplicated the same order after every update.
+    let host=qs('kapaniCustomDeliveryQueue');
+    if(!host){host=document.createElement('div');host.id='kapaniCustomDeliveryQueue';delivList.appendChild(host);}
+    const pool=[...new Map([...waiting,...proposed,...myActive]
+        .filter(o=>o?.id).map(o=>[o.id,o])).values()];
+    if(!pool.length){host.innerHTML='';return;}
     let html=`<div style="font-size:12px;font-weight:900;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;margin:14px 0 8px;">📦 Заказы из бизнесов / маркетплейса</div>`;
     pool.forEach(o=>{
         const isMine=o.worker===currentNick;
@@ -13562,9 +13548,9 @@ async function renderDeliveryCustomOrders(){
         if(!isMine&&o.status==='waiting'&&['business','marketplace'].includes(o.source)) priceControl=`<div style="margin-top:7px;"><div style="font-size:12px;color:var(--gold);font-weight:900;margin-bottom:5px;">🚚 Цена доставки: ${Number(o.deliveryPrice||deliveryDistancePrice(Number(o.distanceKm||0))||0).toLocaleString()} ₽</div><button class="btn btn-primary btn-sm" onclick="takeCustomDelivery('${o.id}')">🛵 Взять заказ</button></div>`;
         if(!isMine&&o.status==='waiting'&&o.source==='business') priceControl=`<button class="btn btn-primary btn-sm" onclick="takeCustomDelivery('${o.id}')">✅ Взять заказ (${Number(o.deliveryPrice||0).toLocaleString()} ₽)</button>`;
         const mineActions=isMine?`<div style="display:flex;gap:6px;flex-wrap:wrap;">${o.status==='client_confirmed'?`<button class="btn btn-primary btn-sm" onclick="startCustomDelivery('${o.id}')">🛵 Начать доставку</button>`:''}${o.status==='in_progress'?`<button class="btn btn-gold btn-sm" onclick="completeCustomDelivery('${o.id}')">✅ Доставлено</button>`:''}${o.status==='delivered'&&!o.workerConfirmed?`<button class="btn btn-gold btn-sm" onclick="confirmCustomDeliveryDone('${o.id}')">✅ Завершить</button>`:''}</div>`:'';
-        html+=`<div class="work-order" style="margin-bottom:10px;"><div style="font-weight:900;font-size:14px;">${escHtml(o.sourceLabel||'')} «${escHtml(o.from)}»</div><div style="font-size:12px;color:var(--muted);">📋 ${escHtml(o.items)}</div><div style="font-size:12px;color:var(--muted);">📍 ${escHtml(o.address)}</div><div style="font-size:12px;color:var(--muted);">👤 ${escHtml(o.client)}</div>${o.contact?`<div style="font-size:12px;color:var(--muted);">📞 ${escHtml(o.contact)}</div>`:''}${o.distanceKm!=null?`<div style="font-size:12px;color:var(--muted);">📏 ${Number(o.distanceKm).toFixed(2)} км</div>`:''}${o.priceOffer!=null?`<div style="font-size:12px;color:var(--gold);font-weight:900;">💰 ${Number(o.priceOffer).toLocaleString()} ₽</div>`:''}${priceControl}${mineActions}</div>`;
+        html+=`<div class="work-order" data-delivery-order-id="${escAttr(o.id)}" style="margin-bottom:10px;"><div style="font-weight:900;font-size:14px;">${escHtml(o.sourceLabel||'')} «${escHtml(o.from)}»</div><div style="font-size:12px;color:var(--muted);">📋 ${escHtml(o.items)}</div><div style="font-size:12px;color:var(--muted);">📍 ${escHtml(o.address)}</div>${o.notes?`<div class="delivery-customer-note">Комментарий клиента — ${escHtml(o.notes)}</div>`:''}<div style="font-size:12px;color:var(--muted);">👤 ${escHtml(o.client)}</div>${o.contact?`<div style="font-size:12px;color:var(--muted);">📞 ${escHtml(o.contact)}</div>`:''}${o.distanceKm!=null?`<div style="font-size:12px;color:var(--muted);">📏 ${Number(o.distanceKm).toFixed(2)} км</div>`:''}${o.priceOffer!=null?`<div style="font-size:12px;color:var(--gold);font-weight:900;">💰 ${Number(o.priceOffer).toLocaleString()} ₽</div>`:''}${priceControl}${mineActions}</div>`;
     });
-    delivList.insertAdjacentHTML('beforeend',html);
+    host.innerHTML=html;
 }
 
 window.proposeCustomDeliveryPrice=async function(){ return toast('ℹ️ Цена доставки фиксирована: 200 ₽/км','gold'); };
@@ -14438,12 +14424,132 @@ deliveryBusinessOptions=()=>Object.entries(allBusinessesCache||{}).map(([id,b])=
 deliveryMarketplaceOptions=()=>Object.entries(lastMarketListings||{}).map(([id,l])=>({...l,id})).filter(l=>l.buyer===currentNick&&l.status==='sold'&&point(l.sellerLat,l.sellerLng)&&!['work','service'].includes(l.category));
 const optionsV7=window.renderDeliveryOrderOptions;
 window.renderDeliveryOrderOptions=renderDeliveryOrderOptions=async function(force=false){await optionsV7(force);let host=qs('v8DeliveryCatalog');if(!host){host=document.createElement('div');host.id='v8DeliveryCatalog';qs('deliveryOrderPage')?.prepend(host);}if(!host)return;const businesses=deliveryBusinessOptions();const listings=deliveryMarketplaceOptions();host.innerHTML=`<div class="v8-delivery-hero"><span class="v8-eyebrow">Капани рядом</span><h2>Всё нужное —<br>к вашей двери</h2><p>Выберите магазин или свою покупку.<br>Доставка — 200 ₽ за километр.</p></div><h3>Бизнесы с доставкой</h3><div class="v8-business-grid">${businesses.map(b=>`<button class="v8-business" onclick="kpDeliveryBusiness('${jsEsc(b.id)}')"><img src="${html(b.banner?safeURL(b.banner):'assets/delivery-forest.webp')}" alt="" loading="lazy"><span><b>${html(b.name)}</b><small>${html(b.category||'Товары и услуги')} · ${Object.keys(b.products||{}).length} товаров</small></span></button>`).join('')||'<p class="v8-empty">Пока нет бизнесов с доставкой и точкой на карте.</p>'}</div><h3>Мои покупки на маркетплейсе</h3><div class="v8-purchased">${listings.map(l=>`<button class="btn btn-ghost" onclick="kpDeliveryForListing('${jsEsc(l.id)}')">${html(l.title)} →</button>`).join('')||'<p class="v8-muted">Здесь появятся оплаченные или подтверждённые продавцом покупки с точкой на карте.</p>'}</div>`;};
-window.kpDeliveryBusiness=id=>{qs('deliveryOrderSource').value='business';updateDeliverySourceHint();qs('deliveryOrderBiz').value=id;updateDeliveryBizProducts();const b=allBusinessesCache[id];modal(b.name,`<div class="v8-product-grid">${Object.entries(b.products||{}).filter(([,p])=>p.available!==false).map(([pid,p])=>`<article class="v8-product">${p.photo?`<img src="${html(safeURL(p.photo))}" alt="${html(p.name)}" loading="lazy">`:''}<h3>${html(p.name)}</h3><p>${html(p.desc||'')}</p><strong>${money(p.price)}</strong>${button('Выбрать',`kpChooseDeliveryProduct('${jsEsc(pid)}')`,'btn btn-ghost')}</article>`).join('')}</div>`);};
-window.kpChooseDeliveryProduct=id=>{qs('deliveryOrderBizProduct').value=id;window.kpCloseSheet();updateDeliverySummary();qs('deliveryBusinessBlock')?.scrollIntoView({behavior:'smooth',block:'start'});};
+const deliveryBasketByBiz=Object.create(null);
+function deliveryBasketFor(bid){return deliveryBasketByBiz[bid] ||= Object.create(null);}
+function deliveryBasketLines(bid){
+  const products=allBusinessesCache?.[bid]?.products||{};
+  return Object.entries(deliveryBasketFor(bid))
+    .filter(([pid,qty])=>products[pid]&&products[pid].available!==false&&Number.isInteger(qty)&&qty>0)
+    .map(([pid,qty])=>({pid,qty,product:products[pid]}));
+}
+function paintDeliveryModalCatalog(bid){
+  const host=qs('kpDeliveryModalProducts'),biz=allBusinessesCache?.[bid];
+  if(!host||!biz)return;
+  const basket=deliveryBasketFor(bid);
+  host.innerHTML=Object.entries(biz.products||{}).filter(([,p])=>p.available!==false).map(([pid,p])=>`
+    <article class="v8-product delivery-basket-product">
+      ${p.photo?`<img src="${html(safeURL(p.photo))}" alt="${html(p.name||'Товар')}" loading="lazy">`:''}
+      <h3>${html(p.name||'Товар')}</h3><p>${html(p.desc||'')}</p><strong>${money(p.price)}</strong>
+      <div class="delivery-qty-controls">
+        ${button('−',`kpDeliveryAdjustItem('${jsEsc(bid)}','${jsEsc(pid)}',-1)`,'btn btn-ghost btn-sm')}
+        <span aria-live="polite">${basket[pid]||0}</span>
+        ${button('+',`kpDeliveryAdjustItem('${jsEsc(bid)}','${jsEsc(pid)}',1)`,'btn btn-ghost btn-sm')}
+      </div>
+    </article>`).join('')||'<p>В этом бизнесе сейчас нет доступных товаров.</p>';
+  const lines=deliveryBasketLines(bid);
+  const count=lines.reduce((n,x)=>n+x.qty,0);
+  const total=lines.reduce((n,x)=>n+Number(x.product.price||0)*x.qty,0);
+  const footer=qs('kpDeliveryModalTotal');
+  if(footer)footer.textContent=`В корзине ${count} шт. · товары на ${money(total)} · доставка отдельно`;
+}
+window.kpDeliveryAdjustItem=(bid,pid,delta)=>{
+  const product=allBusinessesCache?.[bid]?.products?.[pid];
+  if(!product||product.available===false)return;
+  const basket=deliveryBasketFor(bid);
+  const next=Math.max(0,Math.min(20,(basket[pid]||0)+Number(delta||0)));
+  if(next)basket[pid]=next;else delete basket[pid];
+  paintDeliveryModalCatalog(bid);
+  // The map keeps its markers and tiles while basket quantities change.
+  updateDeliverySummary();
+};
+window.kpOpenDeliveryCartCatalog=(bid=qs('deliveryOrderBiz')?.value||'')=>{
+  const b=allBusinessesCache?.[bid];
+  if(!b)return toast('Выберите бизнес с товарами','gold');
+  const el=modal(b.name||'Товары',`<div id="kpDeliveryModalProducts" class="v8-product-grid"></div><div class="delivery-basket-footer"><strong id="kpDeliveryModalTotal"></strong>${button('Готово — сохранить корзину',`kpCloseSheet()`,'btn btn-primary')}</div>`);
+  paintDeliveryModalCatalog(bid);
+  return el;
+};
+window.kpDeliveryBusiness=id=>{
+  qs('deliveryOrderSource').value='business';updateDeliverySourceHint();
+  qs('deliveryOrderBiz').value=id;updateDeliveryBizProducts();
+  window.kpOpenDeliveryCartCatalog(id);
+};
+window.kpChooseDeliveryProduct=id=>{
+  const bid=qs('deliveryOrderBiz')?.value;
+  if(!bid)return;
+  window.kpDeliveryAdjustItem(bid,id,1);
+  window.kpCloseSheet();
+  updateDeliverySummary();
+};
+const originalDeliverySummary=window.updateDeliverySummary;
+window.updateDeliverySummary=function(){
+  originalDeliverySummary();
+  const source=qs('deliveryOrderSource')?.value;
+  const basketInfo=qs('deliveryCartSummary');
+  if(source!=='business')return;
+  const bid=qs('deliveryOrderBiz')?.value||'';
+  const lines=deliveryBasketLines(bid);
+  const count=lines.reduce((n,x)=>n+x.qty,0);
+  const price=lines.reduce((n,x)=>n+Number(x.product.price||0)*x.qty,0);
+  if(basketInfo)basketInfo.textContent=count?`${count} шт. на ${money(price)}. Доставка оплачивается отдельно.`:'Корзина пуста. Нажмите «Выбрать товары и количество».';
+  const summary=qs('deliverySelectionSummary');
+  if(summary){
+    summary.style.display='block';
+    summary.innerHTML=count
+      ? `<b>${html(allBusinessesCache?.[bid]?.name||'Бизнес')}</b><div>${lines.map(x=>`${html(x.product.name||'Товар')} × ${x.qty}`).join(' · ')}</div><strong>${money(price)} за товары + доставка</strong>`
+      : 'Пока нет выбранных товаров';
+  }
+};
 window.kpDeliveryForListing=async id=>{window.kpCloseSheet();navTo('deliveryOrderPage');await renderDeliveryOrderOptions(true);qs('deliveryOrderSource').value='marketplace';updateDeliverySourceHint();qs('deliveryOrderMarketItem').value=id;updateDeliverySummary();};
-window.placeDeliveryOrder=()=>action('delivery-create',async()=>{const source=qs('deliveryOrderSource').value;const lat=qs('deliveryOrderLat').value,lng=qs('deliveryOrderLng').value;if(!point(lat,lng))throw new Error('Выберите точку доставки на карте');const data={source,destLat:Number(lat),destLng:Number(lng),address:qs('deliveryOrderAddr').value.trim(),notes:qs('deliveryOrderNotes').value.trim(),contact:qs('deliveryOrderContact').value.trim()};if(source==='business'){data.bizId=qs('deliveryOrderBiz').value;data.productId=qs('deliveryOrderBizProduct').value;}else data.listingId=qs('deliveryOrderMarketItem').value;const key='delivery:'+JSON.stringify(data);await service('delivery','create',requestID(key),data);v8.requests.delete(key);toast('Заказ создан. Стоимость зарезервирована до получения.','green');await renderMyDeliveryOrders();});
+window.placeDeliveryOrder=()=>action('delivery-create',async()=>{
+  const source=qs('deliveryOrderSource').value;
+  const lat=qs('deliveryOrderLat').value,lng=qs('deliveryOrderLng').value;
+  if(!point(lat,lng))throw new Error('Выберите точку доставки на карте');
+  const data={source,destLat:Number(lat),destLng:Number(lng),address:qs('deliveryOrderAddr').value.trim(),notes:qs('deliveryOrderNotes').value.trim(),contact:qs('deliveryOrderContact').value.trim()};
+  let key,order;
+  if(source==='business'){
+    const bid=qs('deliveryOrderBiz').value;
+    const cart=Object.fromEntries(deliveryBasketLines(bid).map(x=>[x.pid,x.qty]));
+    if(!Object.keys(cart).length)throw new Error('Добавьте хотя бы один товар в корзину доставки');
+    key='delivery-cart:'+JSON.stringify({bid,cart,data});
+    order=await rpc('kp_delivery_cart_v22',{
+      p_id:requestID(key),p_biz:bid,p_cart:cart,
+      p_dest_lat:data.destLat,p_dest_lng:data.destLng,
+      p_address:data.address,p_notes:data.notes,p_contact:data.contact
+    });
+    delete deliveryBasketByBiz[bid];
+    updateDeliverySummary();
+  }else{
+    data.listingId=qs('deliveryOrderMarketItem').value;
+    key='delivery:'+JSON.stringify(data);
+    order=await service('delivery','create',requestID(key),data);
+  }
+  v8.requests.delete(key);
+  if(source==='marketplace'){
+    try{await rpc('kp_delivery_alert_v22',{p_id:order.id});}
+    catch(error){console.warn('[delivery in-app alerts]',error);}
+  }
+  toast('Заказ создан. Деньги за товары и доставку зарезервированы до получения.','green');
+  await renderMyDeliveryOrders();
+  // Web Push goes through the configured worker. It must not block or undo
+  // the already committed order if an offline device cannot receive it.
+  void (async()=>{
+    try{
+      const users=(await get(ref(db,'users'))).val()||{};
+      const recipients=Object.entries(users).filter(([nick,u])=>nick!==currentNick&&hasMunicipalJob(u,'Доставщик')).map(([nick])=>nick);
+      await Promise.all(recipients.map(nick=>pushNotification(nick,
+        `Новая доставка из «${order.from||'бизнеса'}» — ${order.items||'товары'}; оплата доставки ${Number(order.deliveryPrice||0).toLocaleString('ru-RU')} ₽`,
+        'delivery_orders',{source:'delivery',sourceMessageId:String(order.id||''),url:`${new URL('./',location.href).pathname}?kpSection=delivery`})));
+    }catch(error){console.warn('[delivery push]',error);}
+  })();
+  await refreshBalance();
+});
 window.cancelCustomDelivery=id=>{if(confirm('Отменить доставку? Её оплата вернётся на счёт. Уже купленный товар маркетплейса останется вашим.'))return action('delivery:'+id,async()=>{await service('delivery','cancel',id);await renderMyDeliveryOrders();toast('Доставка отменена. Можно заказать её снова.','green');});};
-window.takeCustomDelivery=id=>action('delivery:'+id,async()=>{await service('delivery','take',id);await renderDeliveryCustomOrders();});
+window.takeCustomDelivery=id=>action('delivery:'+id,async()=>{
+  await service('delivery','take',id);
+  toast('Заказ принят. Теперь можно начать доставку.','green');
+  await renderDeliveryCustomOrders();
+});
 window.startCustomDelivery=id=>action('delivery:'+id,async()=>{await service('delivery','start',id);await renderDeliveryCustomOrders();});
 window.completeCustomDelivery=id=>action('delivery:'+id,async()=>{await service('delivery','finish',id);await renderDeliveryCustomOrders();});
 window.confirmCustomDeliveryReceived=id=>action('delivery:'+id,async()=>{await service('delivery','confirm',id);await renderMyDeliveryOrders();toast('Получение подтверждено. Оплата перечислена исполнителям.','green');});
@@ -14564,7 +14670,15 @@ window.applyToBiz=bid=>action('biz-job',async()=>{const d={bizId:bid,roleId:qs('
 window.approveJobApp=(bid,id)=>action('employment:'+id,async()=>{await employment('approve',id,{bizId:bid});await renderBizOwnerPanel();});
 window.rejectJobApp=(bid,id)=>action('employment:'+id,async()=>{await employment('reject',id,{bizId:bid});await renderBizOwnerPanel();});
 window.fireEmployee=nick=>{if(confirm(`Завершить работу сотрудника ${nick}?`))return action('employment:fire',async()=>{await employment('fire',crypto.randomUUID(),{bizId:currentBizId,target:nick});await renderBizOwnerPanel();});};
-window.quitBiz=bid=>{if(confirm('Уволиться из бизнеса?'))return action('employment:quit',async()=>{await employment('quit',crypto.randomUUID(),{bizId:bid});await openBizDetail(bid);});};
+window.quitBiz=bid=>{
+  const name=allBusinessesCache?.[bid]?.name||'бизнеса';
+  if(!confirm(`Вы действительно хотите уволиться из «${name}»? Доступ сотрудника будет отключён.`))return;
+  return action('employment:quit',async()=>{
+    await employment('quit',crypto.randomUUID(),{bizId:bid});
+    toast(`Вы уволились из «${name}». Должность в этом бизнесе снята.`,'green');
+    await openBizDetail(bid);
+  });
+};
 window.applyForHospitalAssistant=()=>action('hospital-apply',async()=>{const key='hospital-assistant';await employment('apply',requestID(key),{kind:'assistant'});v8.requests.delete(key);toast('Заявка отправлена врачу','green');});
 window.acceptHospitalAssistantApp=id=>action('assistant:'+id,async()=>{await employment('approve',id,{kind:'assistant'});await renderHospitalPanel();});
 window.rejectHospitalAssistantApp=id=>action('assistant:'+id,async()=>{await employment('reject',id,{kind:'assistant'});await renderHospitalPanel();});

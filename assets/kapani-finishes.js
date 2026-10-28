@@ -172,8 +172,21 @@
     const biz = window.kpCurrentBizId?.(); if (!biz) throw new Error('Откройте свой бизнес');
     if (!effect) { await bridge().update(dbref('businesses/' + biz),{bgEffect:null});notify('Оформление отключено');await window.renderBizOwnerPanel?.();return; }
     const price = effectPrices[effect];if (!price) throw new Error('Оформление не найдено');
+    const current = (await bridge().get(dbref('businesses/' + biz))).val();
+    if (!current || current.owner !== nick()) throw new Error('Бизнес не найден или недоступен');
+    if (current.bgEffect === effect) { notify('Это оформление уже установлено');return; }
+    if (Number(current.balance || 0) < price) throw new Error('На счёте бизнеса недостаточно средств для покупки');
     if (!confirm('Купить оформление за ' + money(price) + ' со счёта бизнеса?')) return;
-    await businessFinance('effect',effect,price);
+    try { await businessFinance('effect',effect,price); }
+    catch(error){
+      if (/Invalid effect purchase/i.test(String(error?.message))) {
+        const latest=(await bridge().get(dbref('businesses/' + biz))).val();
+        if (latest?.bgEffect === effect){notify('Это оформление уже активно');return;}
+        if (Number(latest?.balance || 0) < price) throw new Error('Недостаточно денег на счёте бизнеса');
+        throw new Error('Покупка не прошла. Состояние бизнеса изменилось, откройте панель заново.');
+      }
+      throw error;
+    }
   });
   window.kpBusinessStatement = () => run('business-statement', async () => {
     const biz = window.kpCurrentBizId?.();if (!biz) throw new Error('Откройте свой бизнес');

@@ -1,0 +1,74 @@
+/* Kapani v18: safe business effects, usable mobile staff and delivery cart. */
+#bizDetailBgWrap,
+[id^="bizCardBg_"] {
+  isolation:isolate;
+  overflow:hidden;
+  contain:paint;
+}
+#bizDetailBgEffect,
+[id^="bizCardBg_"] {
+  pointer-events:none;
+  max-width:100%;
+  overflow:hidden;
+  isolation:isolate;
+}
+#bizDetailBgEffect.profile-bg-aurora::before,
+#bizDetailBgEffect.profile-bg-galaxy::before,
+#bizDetailBgEffect.profile-bg-fire::before,
+#bizDetailBgEffect.profile-bg-fire::after,
+#bizDetailBgEffect.profile-bg-plasma::before,
+#bizDetailBgEffect.profile-bg-thunder::before,
+#bizDetailBgEffect.profile-bg-hologram::before,
+#bizDetailBgEffect.profile-bg-dragon::before,
+#bizDetailBgEffect.profile-bg-prime::before,
+#bizDetailBgEffect.profile-bg-particles::before,
+[id^="bizCardBg_"]::before,
+[id^="bizCardBg_"]::after {
+  z-index:0;
+  pointer-events:none;
+}
+#bizEmployeesList .biz-employee-row { min-width:0; }
+#bizEmployeesList .biz-employee-nick {
+  min-width:0;
+  word-break:normal !important;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  overflow-wrap:normal !important;
+}
+.delivery-cart-summary {margin-top:8px;font-size:12px;line-height:1.45;color:var(--muted);}
+.delivery-basket-product {min-width:0;}
+.delivery-qty-controls {display:flex;align-items:center;gap:10px;justify-content:flex-start;margin-top:10px;}
+.delivery-qty-controls .btn {width:42px;min-width:42px;min-height:38px;padding:5px 9px;font-size:19px;touch-action:manipulation;}
+.delivery-qty-controls span {min-width:24px;text-align:center;font-weight:900;}
+.delivery-basket-footer {position:sticky;bottom:0;background:var(--surface);padding:14px 4px 2px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px;z-index:2;}
+.delivery-basket-footer strong {font-size:13px;}
+.delivery-customer-note {padding:10px 12px;border-left:3px solid var(--primary);background:var(--pri-dim);border-radius:8px;overflow-wrap:anywhere;font-size:13px;margin:8px 0;}
+#kapaniCustomDeliveryQueue .work-order {position:relative;isolation:isolate;}
+#kapaniCustomDeliveryQueue button {position:relative;z-index:2;pointer-events:auto;touch-action:manipulation;}
+@media (max-width:640px) {
+  #bizEmployeesList .biz-employee-row { flex-wrap:wrap;gap:8px;align-items:center;padding:11px; }
+  #bizEmployeesList .biz-employee-row>img {flex:0 0 36px;}
+  #bizEmployeesList .biz-employee-info {flex:1 1 calc(100% - 55px) !important;min-width:0 !important;}
+  #bizEmployeesList .biz-employee-row>button {flex:1 1 auto;min-width:0;white-space:nowrap;font-size:11px;padding:9px 6px;}
+  #gHeader .h-notify {display:flex !important;align-items:center;justify-content:center;flex:0 0 36px;min-width:36px;min-height:36px;margin:0;cursor:pointer;}
+  #gHeader .header-actions {min-width:0;display:flex;align-items:center;gap:5px;}
+  #gHeader .header-actions>div:last-child {min-width:0;gap:4px !important;}
+  #gHeader .h-badge {top:0;right:-1px;font-size:10px;}
+  #gHeader .h-bal {white-space:nowrap;}
+  #deliveryBusinessBlock {grid-template-columns:minmax(0,1fr);}
+  .delivery-qty-controls .btn {min-height:42px;}
+}
+@media (max-width:360px) {
+  #gHeader .h-bal {padding:7px 5px;font-size:10px;}
+  #gHeader .h-notify {flex-basis:32px;min-width:32px;}
+  #bizEmployeesList .biz-employee-row>button {font-size:10px;padding:9px 4px;}
+}
+@media (prefers-reduced-motion:reduce) {
+  #bizDetailBgEffect,
+  #bizDetailBgEffect::before,
+  #bizDetailBgEffect::after,
+  [id^="bizCardBg_"],
+  [id^="bizCardBg_"]::before,
+  [id^="bizCardBg_"]::after { animation:none !important; }
+}

@@ -11,19 +11,20 @@ if (!config.url || !config.anonKey) {
   throw new Error('Заполните supabase.url и supabase.anonKey в config.js');
 }
 
-// Supabase Auth v2.49.8 sometimes requests the same Navigator Lock with a
-// zero-millisecond timeout while another auth operation holds it. Waiting in
-// the browser's native queue avoids a spurious unhandled rejection without
-// disabling cross-tab session safety.
+// Allow auth restoration/refresh to queue behind an in-flight operation. A
+// previously unconditional 10-second abort turned slow mobile connections
+// into failed session restores (and the app then discarded the remembered nick).
 async function authSessionLock(name, timeout, callback) {
   if (!globalThis.navigator?.locks?.request) return callback();
-  const controller = new AbortController();
-  const waitMs = Number.isFinite(timeout) && timeout > 0 ? Math.max(1500, timeout) : 10000;
-  const timer = setTimeout(() => controller.abort(), waitMs);
+  const options = { mode: 'exclusive' };
+  let timer;
+  if (Number.isFinite(timeout) && timeout > 0) {
+    const controller = new AbortController();
+    options.signal = controller.signal;
+    timer = setTimeout(() => controller.abort(), Math.max(60000, timeout));
+  }
   try {
-    return await navigator.locks.request(name, {
-      mode: 'exclusive', signal: controller.signal
-    }, () => {
+    return await navigator.locks.request(name, options, () => {
       clearTimeout(timer);
       return callback();
     });
