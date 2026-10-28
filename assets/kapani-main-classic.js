@@ -220,7 +220,7 @@ const WEB_PUSH_VAPID_PUBLIC_KEY = CONFIG.webPushVapidPublicKey;
 // Canonical push backend: direct Web Push through the Cloudflare Worker in push-worker/.
 // Firebase Functions are not part of the push delivery path.
 const PUSH_WORKER_URL = String(CONFIG.pushWorkerUrl || '').trim().replace(/\/+$/,'');
-const KAPANI_BUILD = 'kapani-v14-2026-10-27'; window.KAPANI_BUILD = KAPANI_BUILD;
+const KAPANI_BUILD = 'kapani-v16-2026-10-27'; window.KAPANI_BUILD = KAPANI_BUILD;
 const ECONOMY_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const ECONOMY_ACCOUNT_WEEKLY_FEE = 15;
 const ECONOMY_TRANSFER_COMMISSION = 0.02;
@@ -915,6 +915,7 @@ function hideLoading() {
         if(status) status.textContent = 'Готово!';
         setTimeout(() => {
             ov.classList.add('hidden');
+            document.documentElement.classList.add('kp-boot-ready');
             setTimeout(() => { ov.style.display = 'none'; }, 460);
         }, reduced ? 50 : 290);
     }, wait);
@@ -1062,7 +1063,7 @@ function getBusinessLimitForUser(u){
     return 1;
 }
 
-function todayKey(){ return new Date().toLocaleDateString('sv-SE'); }
+function todayKey(){ return new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'}); }
 function displayNick(u){ if(!u) return ''; return (u.displayName && String(u.displayName).trim()) || u.nick || ''; }
 function normalizePublicName(s){ return String(s||'').trim().toLowerCase(); }
 async function sha256Hex(str){
@@ -2720,7 +2721,7 @@ window.kapaniPushDoctor=async function(target){
     if(out.worker&&out.worker.vapidPublicPrefix&&out.worker.vapidPublicPrefix!==out.site.configVapidPrefix)verdict.push('❌ Ключ VAPID в config.js и в Worker РАЗНЫЙ — сделайте одинаковыми и заново нажмите «Включить»');
     if(out.worker&&out.worker.vapid&&!out.worker.vapid.pairOk)verdict.push('❌ Ключи VAPID в Worker: '+(out.worker.vapid.error||'не удалось проверить пару ключей'));
     if(out.debug&&typeof out.debug==='object'){
-        if(browserId&&!(out.debug.yourDevices||[]).some(d=>d.id===browserId))verdict.push('❌ Это устройство не записано в Worker под ником «'+currentNick+'» — нажмите «Включить» ещё раз');
+        if(browserId&&!(Array.isArray(out.debug.yourDevices)?out.debug.yourDevices:[]).some(d=>d.id===browserId))verdict.push('❌ Это устройство не записано в Worker под ником «'+currentNick+'» — нажмите «Включить» ещё раз');
         if(out.debug.diagnosis?.hint)verdict.push('ℹ️ '+out.debug.diagnosis.hint);
     }
     if(!verdict.length)verdict.push('✅ Всё выглядит правильно');
@@ -2756,7 +2757,8 @@ async function refreshPushWorkerStatus(){
         if(!ph) lines.push('В Worker: ❌ не найден хэш пароля (выйдите и войдите снова)');
         else{
             const d=await pushWorkerCall('/debug',{nick:currentNick,ph,target:currentNick});
-            const ok=browserId&&(d.yourDevices||[]).some(x=>x.id===browserId);
+            const devices=Array.isArray(d.yourDevices)?d.yourDevices:[];
+            const ok=browserId&&devices.some(x=>x.id===browserId);
             lines.push(ok?'В Worker: ✅ это устройство зарегистрировано':'В Worker: ❌ это устройство НЕ зарегистрировано — нажмите «Переподключить»');
         }
     }catch(e){ lines.push('В Worker: ❌ '+pushErrorText(e)); }
@@ -4879,6 +4881,28 @@ window.doTransfer = async function(){
 let _accountTransactionsCache=null;
 let _accountTransactionsAt=0;
 let _accountTransactionsRequest=null;
+function describeAccountTransaction(tx){
+    const labels={
+        service_reserve:'Оплата услуги зарезервирована',service_refund:'Возврат оплаты услуги',
+        service_payout:'Оплата выполненной услуги',business_order_reserve:'Заказ в бизнесе — оплата зарезервирована',
+        business_order_refund:'Возврат оплаты заказа в бизнесе',business_sale:'Продажа товара',
+        casino_deposit:'Пополнение игрового счёта',casino_withdraw:'Вывод с игрового счёта',
+        event_reserve:'Резерв для мероприятия',event_bet:'Ставка на мероприятие',
+        event_result:'Выигрыш по ставке',event_reserve_return:'Возврат резерва мероприятия',
+        subscription_buy:'Оплата подписки',subscription_gift:'Подарок подписки',
+        business_deposit:'Пополнение счёта бизнеса',business_withdraw:'Вывод со счёта бизнеса',
+        business_auto_salary:'Зарплата в бизнесе',auto_salary:'Зарплата',
+        assistant_salary_out:'Выплата помощнику',assistant_salary_in:'Зарплата помощника',
+        civic_fee:'Оплата услуги мэрии',civic_refund:'Возврат оплаты услуги мэрии',
+        janitor_reward:'Оплата работы уборщика',rental_payment:'Аренда здания',
+        savings_interest:'Начисление 0,3% в день на накопления'
+    };
+    const raw=String(tx.desc||'');
+    const desc=labels[raw]||raw|| (tx.type==='in'?'Поступление':'Списание');
+    const generic=tx.who==='Капани' || !tx.who;
+    const who=generic?'':(tx.type==='in'?'От: ':'Кому: ')+tx.who;
+    return {desc,who};
+}
 async function getAccountTransactions(force=false){
     if(!force&&_accountTransactionsCache&&Date.now()-_accountTransactionsAt<3000) return _accountTransactionsCache;
     if(_accountTransactionsRequest) return _accountTransactionsRequest;
@@ -4898,11 +4922,8 @@ async function renderRecentTransfers(){
     try {arr=(await getAccountTransactions()).slice().sort((a,b)=>String(b.ts||'').localeCompare(String(a.ts||''))).slice(0,5);}
     catch(e){console.error('[bank history]',e);el.textContent='Не удалось загрузить историю: '+(e.message||e);return;}
     el.innerHTML=arr.length===0?'<div style="color:var(--muted);font-size:13px;">Нет операций</div>':arr.map(tx=>{
-        const whoLine = tx.who ? (tx.type==='in' ? 'От: '+escHtml(tx.who) : '→ '+escHtml(tx.who)) : '';
-        const savingsYield = tx.desc === 'savings_interest';
-        const descLine = savingsYield ? 'Начисление 0,3% в день на накопления'
-            : tx.desc ? escHtml(tx.desc) : (tx.who ? '' : (tx.type==='in'?'Поступление':'Списание'));
-        const title = savingsYield ? descLine : [whoLine, descLine].filter(Boolean).join(' · ');
+        const info=describeAccountTransaction(tx);
+        const title=[info.desc,info.who].filter(Boolean).map(escHtml).join(' · ');
         return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);"><div style="font-size:20px;">${tx.type==='in'?'💰':'💸'}</div><div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:12px;line-height:1.35;">${title}</div><div style="font-size:10px;color:var(--muted);margin-top:2px;">${escHtml(tx.date||'')} · ${escHtml(tx.time||'')}</div></div><div style="font-weight:900;font-size:14px;white-space:nowrap;${tx.type==='in'?'color:var(--primary)':'color:var(--red)'};">${tx.type==='in'?'+':'−'}${tx.amt}₽</div></div>`;
     }).join('');
 }
@@ -4935,7 +4956,10 @@ window.handleCallPhoto = async function(e){
     const file = e.target.files[0]; if(!file) return;
     toast('📷 Сжимаем фото...','gold');
     try{
-        const dataUrl = await compressImage(file, 1000, 0.82);
+        let dataUrl = await compressImage(file, 1000, 0.82);
+        if(dataUrl.length>1900000)dataUrl=await compressImage(file, 800, 0.65);
+        if(dataUrl.length>1900000)dataUrl=await compressImage(file, 600, 0.52);
+        if(dataUrl.length>1900000)throw new Error('Фото слишком большое');
         _callPhotoData = dataUrl;
         const prev = qs('callPhotoPreview');
         if(prev){ prev.src = dataUrl; prev.style.display = 'block'; }
@@ -4950,9 +4974,10 @@ window.submitCall = async function(){
     const name = (qs('callName')?.value||'').trim();
     const address = (qs('callAddress')?.value||'').trim();
     const desc = (qs('callDesc')?.value||'').trim();
-    if(!name) return toast('⚠️ Укажите ваше имя','gold');
-    if(!address) return toast('⚠️ Укажите адрес','gold');
-    if(!desc) return toast('⚠️ Опишите, что произошло','gold');
+    if(name.length<1||name.length>60) return toast('Укажите имя длиной до 60 символов','gold');
+    if(address.length<3||address.length>120) return toast('Адрес должен содержать от 3 до 120 символов','gold');
+    if(desc.length<5||desc.length>500) return toast('Опишите ситуацию от 5 до 500 символов','gold');
+    if(_callPhotoData && _callPhotoData.length>2000000) return toast('Фото слишком большое для вызова. Выберите другое.','gold');
     const btn=qs('callSubmitBtn');
     _callSubmitBusy=true;
     if(btn){btn.disabled=true;btn.textContent='Отправляем…';}
@@ -5107,17 +5132,7 @@ window.openHistoryModal=async function(){
     document.addEventListener('keydown', onEsc);
     modal._escHandler = onEsc;
 
-    // Swipe down to close (touch devices)
-    const sheet = modal.querySelector('.history-sheet');
-    let touchStartY = 0;
-    const onTouchStart = (e) => { touchStartY = e.touches[0].clientY; };
-    const onTouchEnd = (e) => {
-        const dy = e.changedTouches[0].clientY - touchStartY;
-        if(dy > 80) closeHistoryModal();
-    };
-    sheet.addEventListener('touchstart', onTouchStart, {passive:true});
-    sheet.addEventListener('touchend', onTouchEnd, {passive:true});
-    modal._swipeCleanup = () => { sheet.removeEventListener('touchstart', onTouchStart); sheet.removeEventListener('touchend', onTouchEnd); };
+    // The transaction list owns vertical gestures. Dismiss only with the close button or backdrop.
 
     let all;
     try{all=(await getAccountTransactions()).slice().sort((a,b)=>String(b.ts||'').localeCompare(a.ts||''));}
@@ -5136,9 +5151,8 @@ window.openHistoryModal=async function(){
         const sample=txs[0]?.date||'';
         const title=sample&&sample.includes('.')?monthTitleRu(sample):`Период ${key}`;
         return `<div style="font-size:12px;font-weight:900;color:var(--gold);padding:16px 0 8px;border-bottom:1px solid var(--border);">${escHtml(title)}</div>${txs.map(tx=>{
-            const whoLine = tx.who ? (tx.type==='in' ? 'От: '+escHtml(tx.who) : 'Кому: '+escHtml(tx.who)) : '';
-            const descLine = tx.desc ? escHtml(tx.desc) : (tx.who ? '' : (tx.type==='in'?'Поступление':'Списание'));
-            const subLines = [whoLine, descLine].filter(Boolean).join('<br>');
+            const info=describeAccountTransaction(tx);
+            const subLines=[info.desc,info.who].filter(Boolean).map(escHtml).join('<br>');
             return `<div class="tx-item" style="align-items:flex-start;"><div class="tx-ico">${tx.type==='in'?'💰':'💸'}</div><div class="tx-info" style="min-width:0;overflow:hidden;"><div class="tx-what" style="font-weight:800;font-size:13px;color:var(--text);">${escHtml(tx.date||'')} · ${escHtml(tx.time||'')}</div><div class="tx-who" style="font-size:12px;margin-top:4px;line-height:1.45;word-break:break-word;overflow-wrap:anywhere;">${subLines}</div></div><div class="tx-amt ${tx.type==='in'?'plus':'minus'}" style="flex-shrink:0;align-self:flex-start;">${tx.type==='in'?'+':'−'}${tx.amt}₽</div></div>`;
         }).join('')}`;
     }).join('');
@@ -5215,7 +5229,7 @@ async function sendChatMsg(text,mediaData,msgType,cameraFacing){
 }
 
 // ─── DM MESSENGER ─────────────────────────
-function localDateKey(ts){ return new Date(ts || Date.now()).toLocaleDateString('sv-SE'); }
+function localDateKey(ts){ return new Date(ts || Date.now()).toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'}); }
 function getPinnedMap(){
     const user=allUsersCache[currentNick]||{};
     const saved=user.settings?.pinnedChats;
@@ -5920,37 +5934,49 @@ function getPrimeDailyTasksForToday(){
     }
     return shuffled.slice(0,2);
 }
-async function checkPrimeDailyTaskCondition(taskId, u, ordersVal, marketVal, chatVal, wallVal, dmVal, txVal){
+function isStoreReceipt(tx,deliveryOrders={}){
+    return ['business_order_reserve','market_purchase'].includes(tx.kind) ||
+        (tx.kind==='service_reserve'&&tx.details?.service==='delivery'&&
+         deliveryOrders[tx.details?.order]?.source==='business');
+}
+async function checkPrimeDailyTaskCondition(taskId, u, ordersVal, marketVal, chatVal, wallVal, dmVal, txVal, accountTx=[],deliveryOrders={}){
     const today = todayKey();
+    const receiptToday=today.split('-').reverse().join('.');
     switch(taskId){
         case 'prime_listing': return Object.values(marketVal||{}).some(l=>l.seller===currentNick&&localDateKey(l.createdAt||0)===today);
-        case 'prime_transfer_big': return Object.values(txVal||{}).some(tx=>tx.type==='out'&&tx.date===new Date().toLocaleDateString('ru')&&tx.desc&&tx.desc.startsWith('Перевод пользователю')&&Number(tx.amt||0)>=200);
+        case 'prime_transfer_big': return accountTx.some(tx=>tx.type==='out'&&tx.date===receiptToday&&(tx.kind==='bank_transfer'||tx.desc==='Банковский перевод')&&Number(tx.amt||0)-Number(tx.details?.fee||0)>=200);
         case 'prime_taxi2': return Object.values(ordersVal||{}).filter(o=>o.client===currentNick&&o.type==='taxi'&&localDateKey(o.createdAt||0)===today).length>=2;
         case 'prime_chat5': return Object.values(chatVal||{}).filter(m=>m.nick===currentNick&&localDateKey(m.createdAt||0)===today).length>=5;
         case 'prime_dm3': return Object.values(dmVal||{}).filter(m=>m.nick===currentNick&&localDateKey(m.createdAt||0)===today).length>=3;
-        case 'prime_shop_big': return Object.values(ordersVal||{}).some(o=>o.client===currentNick&&o.type==='shop'&&Number(o.total||o.amount||0)>=150);
+        case 'prime_shop_big': return accountTx.some(tx=>tx.type==='out'&&tx.date===receiptToday&&isStoreReceipt(tx,deliveryOrders)&&Number(tx.amt||0)>=150);
         default: return false;
     }
 }
-async function checkDailyTaskCondition(taskId, u, ordersVal, marketVal, chatVal, wallVal, dmVal, txVal){
+async function checkDailyTaskCondition(taskId, u, ordersVal, marketVal, chatVal, wallVal, dmVal, txVal, accountTx=[],deliveryOrders={}){
     const today = todayKey();
+    const receiptToday=today.split('-').reverse().join('.');
     switch(taskId){
         case 'chat': return Object.values(chatVal||{}).some(m=>m.nick===currentNick&&localDateKey(m.createdAt||0)===today);
         case 'wall': return Object.values(wallVal||{}).some(p=>localDateKey(p.createdAt||0)===today);
-        case 'transfer': return Object.values(txVal||{}).some(tx=>tx.type==='out'&&tx.date===new Date().toLocaleDateString('ru')&&tx.desc&&tx.desc.startsWith('Перевод пользователю'));
-        case 'shop': return Object.values(ordersVal||{}).some(o=>o.client===currentNick&&o.type==='shop') || Object.values(window._taskDeliveryCustomOrders||{}).some(o=>o.client===currentNick && (o.source==='business' || o.itemKind==='business_product'));
-        case 'taxi_req': return Object.values(ordersVal||{}).some(o=>o.client===currentNick&&o.type==='taxi');
+        case 'transfer': return accountTx.some(tx=>tx.type==='out'&&tx.date===receiptToday&&(tx.kind==='bank_transfer'||tx.desc==='Банковский перевод'));
+        case 'shop': return accountTx.some(tx=>tx.type==='out'&&tx.date===receiptToday&&isStoreReceipt(tx,deliveryOrders));
+        case 'taxi_req': return Object.values(ordersVal||{}).some(o=>o.client===currentNick&&o.type==='taxi'&&localDateKey(o.createdAt||0)===today);
         case 'market_browse': return true; // just opening tasks page counts
         case 'dm': return Object.values(dmVal||{}).some(m=>m.nick===currentNick&&localDateKey(m.createdAt||0)===today);
         default: return false;
     }
 }
 const failedAutoTaskClaims=new Set();
+const pendingTaskClaims=new Set();
+const taskClaimRetryAt=new Map();
 async function creditTaskRewardOnce(taskKey, reward, title, claimedKey, claimValue, silent=false){
     if(!await requireNotMigrant('заработок через задания недоступен')) return false;
     const dailyId = claimedKey ? String(claimValue || '') : '';
     const kind = dailyId ? 'daily' : 'once';
     const id = dailyId || String(taskKey || '');
+    const claimKey=`${currentNick}:${kind}:${id}:${kind==='daily'?todayKey():''}`;
+    if(pendingTaskClaims.has(claimKey)||Date.now()<(taskClaimRetryAt.get(claimKey)||0))return false;
+    pendingTaskClaims.add(claimKey);
     try {
         const result=(kind==='once' && !['rewardedAvatar','rewardedWall'].includes(id))
           ? await (async()=>{
@@ -5960,6 +5986,7 @@ async function creditTaskRewardOnce(taskKey, reward, title, claimedKey, claimVal
             })()
           : await claimVerifiedTask(kind,id);
         if(!result?.claimed)return false;
+        taskClaimRetryAt.delete(claimKey);
         const fresh = (await get(userRef(currentNick))).val() || {};
         allUsersCache[currentNick] = fresh;
         window.allUsersCache = allUsersCache;
@@ -5968,14 +5995,21 @@ async function creditTaskRewardOnce(taskKey, reward, title, claimedKey, claimVal
         toast(`🎁 +${Number(result.reward||0)} ₽ на счёт заданий!`,'green');
         return true;
     } catch(e) {
+        taskClaimRetryAt.set(claimKey,Date.now()+60000);
         console.warn('[tasks] server reward:',e);
         if(!silent)toast('Награда не выдана: '+e.message,'red');
         return false;
+    } finally {
+        pendingTaskClaims.delete(claimKey);
     }
 }
 window.claimDailyTask = async function(taskId, reward, options={}){
     if(!currentNick) return;
     const today = todayKey();
+    if(options.autoPrime){
+        const key=`${currentNick}:daily:${taskId}:${today}`;
+        if(pendingTaskClaims.has(key)||Date.now()<(taskClaimRetryAt.get(key)||0))return false;
+    }
     const claimedKey = `dailyClaimed_${today}`;
     const tasks = [...(getDailyTasksForToday()||[])];
     try{
@@ -5989,8 +6023,9 @@ window.claimDailyTask = async function(taskId, reward, options={}){
     if(options.autoPrime && !task.id.startsWith('prime_')) return false;
     const claimed = (await get(userRef(currentNick))).val()?.[claimedKey] || [];
     if(claimed.includes(taskId)) return false;
-    const ok = await creditTaskRewardOnce(`__dailyReward_${today}_${taskId}` , Number(task.reward), 'Ежедневное задание выполнено', claimedKey, taskId);
+    const ok = await creditTaskRewardOnce(`__dailyReward_${today}_${taskId}` , Number(task.reward), 'Ежедневное задание выполнено', claimedKey, taskId,!!options.silent);
     if(ok) renderTasks();
+    return ok;
 };
 window.claimOneTimeTask = async function(taskKey, reward){
     if(!currentNick) return;
@@ -6084,6 +6119,7 @@ window.renderTasks = async function(){
         else reads.push(Promise.resolve(null));
 
         const [ordersSnap,marketSnap,chatSnap,wallSnap,txSnap,dmAllSnap,deliveryCustomSnap,passportSnap,licenseSnap] = await Promise.all(reads);
+        const accountTx=(needsTransfer||needsShop) ? await getAccountTransactions().catch(e=>{console.warn('[tasks] receipts:',e);return [];}) : [];
         const ordersVal = ordersSnap?.val ? (ordersSnap.val() || {}) : {};
         const marketVal = marketSnap?.val ? (marketSnap.val() || {}) : {};
         const chatVal = chatSnap?.val ? (chatSnap.val() || {}) : {};
@@ -6122,11 +6158,11 @@ window.renderTasks = async function(){
         ];
 
         const dailyRows = await Promise.all(dailyTasks.map(async task=>{
-            const conditionMet = await checkDailyTaskCondition(task.id, u, ordersVal, marketVal, chatVal, wallVal, dmTodayMsgs, txVal);
+            const conditionMet = await checkDailyTaskCondition(task.id, u, ordersVal, marketVal, chatVal, wallVal, dmTodayMsgs, txVal, accountTx, deliveryCustomVal);
             return { ...task, conditionMet, alreadyClaimed: claimed.includes(task.id) };
         }));
         const primeDailyRows = await Promise.all(primeDailyTasks.map(async task=>{
-            const conditionMet = await checkPrimeDailyTaskCondition(task.id, u, ordersVal, marketVal, chatVal, wallVal, dmTodayMsgs, txVal);
+            const conditionMet = await checkPrimeDailyTaskCondition(task.id, u, ordersVal, marketVal, chatVal, wallVal, dmTodayMsgs, txVal, accountTx, deliveryCustomVal);
             return { ...task, conditionMet, alreadyClaimed: claimed.includes(task.id) };
         }));
 
@@ -6150,7 +6186,7 @@ window.renderTasks = async function(){
         function primeDailyRow(t){
             let stateHtml;
             if(t.alreadyClaimed) stateHtml = `<div class="task-state done">✅ Выполнено — +${t.reward} ₽</div>`;
-            else if(t.conditionMet) stateHtml = `<div class="task-state done">⏳ Автоматическое начисление…</div>`;
+            else if(t.conditionMet) stateHtml = `<div class="task-state done">⏳ Проверяем выполнение на сервере</div>`;
             else stateHtml = `<div class="task-state todo">В процессе</div>`;
             return `<div class="task-item" style="border-color:rgba(240,196,25,.35);background:linear-gradient(120deg,rgba(240,196,25,.08),rgba(255,110,196,.06),rgba(120,115,245,.06));"><div class="task-main"><div class="task-name">${escHtml(t.title)}</div><div class="task-desc">${escHtml(t.desc)}</div><div class="task-reward" style="color:#f0c419;">+${t.reward} ₽</div></div>${stateHtml}</div>`;
         }
@@ -12031,6 +12067,13 @@ window.terminalPay = async function(){
 
 
 // ─── LOADING SCREEN CONTROL ───────────────
+// Keep the composer above mobile keyboards without letting the page itself scroll.
+if(window.visualViewport){
+    const syncChatViewport=()=>document.documentElement.style.setProperty('--kp-chat-vh',`${Math.round(window.visualViewport.height)}px`);
+    window.visualViewport.addEventListener('resize',syncChatViewport,{passive:true});
+    window.addEventListener('orientationchange',syncChatViewport,{passive:true});
+    syncChatViewport();
+}
 // The overlay is ONLY hidden inside startApp() after data loads,
 // or after safety timeout. Never hide it prematurely on 'load' event.
 const _loadingTimeout = setTimeout(()=>{ if(!appStarted) hideLoading(); }, 15000);
@@ -14358,7 +14401,7 @@ updateTaxiCalc=function(){
     qs('tDist').textContent=Number(quote.distanceKm).toFixed(2);
     qs('tPrice').textContent=String(quote.price);
     if(qs('btnCallTaxi'))qs('btnCallTaxi').disabled=false;
-    taxiFormula.textContent='Проверенная сервером стоимость ' + money(quote.price) + ', расстояние ' + Number(quote.distanceKm).toFixed(2) + ' км по прямой (формула гаверсинуса). По дорогам путь может быть длиннее.';
+    taxiFormula.textContent='Цена рассчитана: '+money(quote.price)+'.';
   }).catch(e=>{
     if(sequence!==taxiQuoteSerial)return;
     taxiFormula.textContent='Не удалось рассчитать сумму на сервере: '+errorText(e.message);
@@ -14429,7 +14472,8 @@ window.kpCasinoMove=kind=>action('casino-money',async()=>{
 });
 window.kpOpenGame=id=>{v8.game=id;const g=games[id];modal(g.title,`<div class="v8-game-stage"><img src="assets/casino-${g.art}.svg" alt="${html(g.sub)}"><div id="v8RoundResult" aria-live="polite">${g.sub}</div></div><p class="v8-muted">${g.desc}</p><label>Ставка<input id="v8Stake" type="number" value="100" min="1" max="1000" step="1"></label>${g.choices.length?`<label>Ваш выбор<select id="v8GameChoice">${g.choices.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label>`:''}${button('Играть','kpPlayGame()')}<p class="v8-muted">После отправки раунд нельзя отменить. При потере связи нажмите ещё раз: повторная ставка не спишется.</p>`);};
 window.kpPlayGame=()=>action('casino-round',async()=>{const amount=Number(qs('v8Stake').value),choice=qs('v8GameChoice')?.value||null,game=v8.game;if(!Number.isSafeInteger(amount)||amount<1||amount>1000)throw new Error('Ставка: от 1 до 1 000 ₽');const key=`round:${game}:${choice}:${amount}`;const stage=qs('v8RoundResult');stage.textContent='Раунд идёт…';stage.closest('.v8-game-stage').classList.add('playing');try{const result=await rpc('kp_casino_v8',{p_action:'play',p_id:requestID(key),p_amount:amount,p_game:game,p_choice:choice});v8.requests.delete(key);const gems=['◆','●','▲','■','⬟','✦'];const value=Array.isArray(result.outcome)?result.outcome.map(n=>gems[n]).join('  '):(game==='wheel'?'×':'')+result.outcome;stage.innerHTML=`<b>${html(value)}</b><span>${result.payout?`Выплата ${money(result.payout)}`:'Без выигрыша'}</span><small>Баланс: ${money(result.balance)}</small>`;v8.casino={...(v8.casino||{}),...result};if(qs('v8CasinoBalance'))qs('v8CasinoBalance').textContent=money(result.balance);}finally{stage.closest('.v8-game-stage')?.classList.remove('playing');}});
-const casinoAudio=new Audio('assets/backbay-lounge.mp3');casinoAudio.loop=true;casinoAudio.volume=.22;
+const casinoAudio=new Audio();casinoAudio.preload='none';casinoAudio.src='assets/backbay-lounge.mp3';casinoAudio.loop=true;casinoAudio.volume=.22;
+document.addEventListener('visibilitychange',()=>{if(document.hidden)casinoAudio.pause();});
 window.kpCasinoMusic=async()=>{if(casinoAudio.paused){try{await casinoAudio.play();qs('v8MusicButton').textContent='Выключить музыку';}catch(e){toast('Не удалось воспроизвести музыку','gold');}}else{casinoAudio.pause();if(qs('v8MusicButton'))qs('v8MusicButton').textContent='Включить музыку';}};
 // Disable all old public casino entrypoints, even if an old link is retained.
 ['kapaniCasinoDeposit','kapaniCasinoWithdraw'].forEach(name=>window[name]=window.kpCasinoWallet);
@@ -14745,6 +14789,11 @@ window.navTo=function(id,...args){
   if(id==='driverPage'&&qs('v8TaxiOnline'))qs('v8TaxiOnline').checked=!!allUsersCache[currentNick]?.settings?.taxiOnline;
   return r;
 };
+document.querySelectorAll('.quick-card[role="button"]').forEach(card=>{
+  card.addEventListener('keydown',event=>{
+    if(event.key==='Enter'||event.key===' '){event.preventDefault();card.click();}
+  });
+});
 document.documentElement.dataset.kapaniRevision='11';
 window.KAPANI_V8_READY=true;
 

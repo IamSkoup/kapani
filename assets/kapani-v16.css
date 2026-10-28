@@ -1,0 +1,112 @@
+/* Chat viewport: the page is fixed, the message stream and attachment queue scroll inside it. */
+html:not(.kp-boot-ready) #authSection { visibility:hidden !important; }
+html:has(#messages.section.active),
+html:has(#messages.section.active) body { height:100%; overflow:hidden !important; overscroll-behavior:none; }
+html:has(#messages.section.active) body { padding-bottom:0; }
+html:has(#messages.section.active) .container { height:var(--kp-chat-vh,100dvh); min-height:0; }
+html:has(#messages.section.active) #mainApp.page-wrap {
+  height:var(--kp-chat-vh,100dvh); min-height:0; overflow:hidden; display:flex !important;
+  flex-direction:column; padding-bottom:calc(75px + env(safe-area-inset-bottom,0px));
+}
+@media (max-width:1079px) {
+  html:has(#messages.section.active) #mainApp.page-wrap {
+    padding-bottom:calc(104px + env(safe-area-inset-bottom,0px));
+  }
+}
+@media (min-width:1080px) {
+  html:has(#messages.section.active) #mainApp.page-wrap { padding-bottom:18px; }
+}
+#messages.section.active {
+  display:flex !important; flex-direction:column; height:100%; min-height:0;
+  overflow:hidden; width:100%; max-width:920px !important; animation:none;
+}
+#messages.section.active::before { flex:0 0 auto; margin-bottom:8px !important; }
+#messages .msg-tabs { flex:0 0 auto; margin-bottom:8px; min-height:0; }
+#messages .msg-panel.active { flex:1 1 0; min-height:0; min-width:0; overflow:hidden; }
+#messages #msgPanel0.active,
+#messages #msgPanel1.active,
+#messages #dmChatView:not([style*="display:none"]):not([style*="display: none"]) {
+  display:flex !important; flex-direction:column;
+}
+#messages #msgPanel0 > .card,
+#messages #dmChatView > .card {
+  display:flex; flex-direction:column; flex:1 1 0; min-height:0;
+  max-height:100%; overflow:hidden; margin-bottom:0;
+}
+#messages #dmChatView { flex:1 1 0; min-height:0; }
+#messages #dmListView { min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+#messages #dmListView > .card { margin-bottom:0; }
+#messages #chatWrapper,#messages #dmWrapper { display:flex; flex:1 1 0; min-height:0; overflow:hidden; }
+#messages #chatMessages,#messages #dmMessages {
+  height:100% !important; min-height:0 !important; max-height:none !important;
+  width:100%; overflow-y:auto !important; overflow-x:hidden;
+  overscroll-behavior:contain; touch-action:pan-y !important;
+  scrollbar-gutter:stable; box-sizing:border-box;
+}
+#messages #chatMessages > *,#messages #dmMessages > * { flex-shrink:0; }
+#messages .chat-input-row { flex:0 0 auto; position:relative !important; min-height:44px; }
+#messages .media-queue.open { flex:0 1 auto; min-height:0; max-height:min(28dvh,190px); overflow-y:auto; overscroll-behavior:contain; }
+#messages .emoji-panel.open { flex:0 1 auto; min-height:0; max-height:min(25dvh,150px); }
+#messages .media-bar.open,#messages .rec-indicator { flex:0 0 auto; }
+#messages .chat-bubble { max-width:min(100%,520px); }
+#messages .chat-msg-body { min-width:0; }
+#messages img,#messages video,#messages audio { max-width:100%; }
+#messages .v8-chat-video,#messages .msg-media-img { max-height:40dvh; object-fit:contain; }
+@media (max-width:600px) {
+  #messages.section.active { padding:0 2px !important; max-width:100vw !important; }
+  #messages.section.active::before { display:none; }
+  #messages .msg-tabs { position:relative; top:auto; padding:4px 6px; }
+  #messages #msgPanel0 > .card,#messages #dmChatView > .card { padding:8px !important; }
+  #messages .card-title { margin-bottom:5px; }
+  #messages #chatWrapper,#messages #dmWrapper { min-height:0; }
+  #messages .chat-msg .chat-bubble { max-width:100%; }
+  #messages .chat-input-row { padding-bottom:3px !important; gap:4px; }
+  #messages #chatInput,#messages #dmInput { font-size:16px; }
+  #messages .media-queue-item { padding:5px; }
+  #messages .media-queue-thumb { width:48px; height:48px; }
+  #messages .media-queue-body textarea { min-height:38px; max-height:70px; }
+}
+@media (max-height:670px) {
+  #messages .jump-date-text { padding:2px 8px; }
+  #messages #msgPanel0 > .card > div:has(> .jump-date-text),
+  #messages #dmChatView .card > div:has(> .jump-date-text) { margin:2px 0 !important; }
+  #messages .media-queue.open { max-height:22dvh; }
+}
+
+/* Restrained forest surfaces for purchased message styles. */
+html[data-season] .chat-msg .chat-bubble[class*="chat-bubble-"],
+html[data-season] #kapaniPreviewChat[class*="chat-bubble-"] {
+  box-shadow:0 2px 9px rgba(0,0,0,.13) !important;
+  animation:none !important;
+  background-size:100% 100% !important;
+}
+.chat-bubble-gold { --kp-bubble-skin:linear-gradient(135deg,#384432,#4a503a);--kp-bubble-border:#85946e; }
+.chat-bubble-rainbow { --kp-bubble-skin:linear-gradient(135deg,#344a40,#41574b);--kp-bubble-border:#819c82; }
+.chat-bubble-ocean { --kp-bubble-skin:linear-gradient(135deg,#284a43,#31564e);--kp-bubble-border:#759e94; }
+.chat-bubble-sunset { --kp-bubble-skin:linear-gradient(135deg,#48483a,#55543d);--kp-bubble-border:#9d9b70; }
+.chat-bubble-aurora { --kp-bubble-skin:linear-gradient(135deg,#28513f,#345a49);--kp-bubble-border:#82a994; }
+.chat-bubble-galaxy { --kp-bubble-skin:linear-gradient(135deg,#303e40,#3c4c4a);--kp-bubble-border:#879d9a; }
+.chat-bubble-fire { --kp-bubble-skin:linear-gradient(135deg,#4b4334,#574c39);--kp-bubble-border:#a49373; }
+.chat-bubble-neon { --kp-bubble-skin:linear-gradient(135deg,#295447,#345b4d);--kp-bubble-border:#82ad92; }
+.chat-bubble-rose { --kp-bubble-skin:linear-gradient(135deg,#433f3e,#504a46);--kp-bubble-border:#a19b8c; }
+.chat-bubble-plasma { --kp-bubble-skin:linear-gradient(135deg,#394843,#43534b);--kp-bubble-border:#92a69a; }
+.chat-bubble-thunder { --kp-bubble-skin:linear-gradient(135deg,#454c39,#505a41);--kp-bubble-border:#a7af7d; }
+.chat-bubble-hologram { --kp-bubble-skin:linear-gradient(135deg,#2d5149,#385b53);--kp-bubble-border:#83aca2; }
+.chat-bubble-dragon { --kp-bubble-skin:linear-gradient(135deg,#4a4537,#565140);--kp-bubble-border:#aa9f7d; }
+.chat-bubble-prime { --kp-bubble-skin:linear-gradient(135deg,#405849,#4a604b);--kp-bubble-border:#a4be9a; }
+.chat-bubble-forest-moss { --kp-bubble-skin:linear-gradient(135deg,#2b513b,#365a43);--kp-bubble-border:#88a98a; }
+.chat-bubble-forest-dusk { --kp-bubble-skin:linear-gradient(135deg,#2b4844,#36504a);--kp-bubble-border:#82a298; }
+.chat-bubble-nature-meadow { --kp-bubble-skin:linear-gradient(135deg,#385440,#426048);--kp-bubble-border:#97b393; }
+.chat-bubble-nature-aurora { --kp-bubble-skin:linear-gradient(135deg,#31554e,#3c6057);--kp-bubble-border:#91b7a5; }
+.chat-bubble-wild-ember { --kp-bubble-skin:linear-gradient(135deg,#4c503b,#595940);--kp-bubble-border:#a7a77d; }
+.chat-bubble-wild-storm { --kp-bubble-skin:linear-gradient(135deg,#344f47,#46584a);--kp-bubble-border:#93ab96; }
+html[data-season] .chat-msg .chat-bubble[class*="chat-bubble-"]::before { animation:none !important; opacity:.3; }
+
+/* Keep the casino usable on low-memory devices. */
+@media (max-width:760px) {
+  html[data-season] body { background-attachment:scroll !important; }
+  #casino .v8-casino-banner,#casino .v8-game-card,#casino .v8-game-stage,
+  #kpV8Sheet .v8-game-stage { backdrop-filter:none !important; -webkit-backdrop-filter:none !important; }
+  #casino *,#kpV8Sheet .v8-game-stage * { animation-duration:0s !important; filter:none !important; will-change:auto !important; }
+  #casino .v8-game-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}

@@ -24,7 +24,7 @@ test('no browser Node runtime', !/next\/dist|require\(['"]express['"]\)/.test(in
 test('server quotation RPC', sql.includes('function public.kp_service_quote_v8('));
 test('taxi quote exact comparison', sql.includes("raise exception 'Fare changed: request a new server quote'"));
 test('identical taxi tariff', main.includes("p_kind:'taxi'") && sql.includes('distance*250'));
-test('distance is straight-line haversine', sql.includes('kp_v8_distance(') && main.includes('формула гаверсинуса'));
+test('server calculates distance with haversine', sql.includes('kp_v8_distance(') && sql.includes('sin(radians('));
 test('client waits for server fare', main.includes('if(!taxiQuote||taxiQuote.coords!==coords.join'));
 test('both coordinates required', main.includes("throw new Error('Отметьте две точки на карте')"));
 test('marketplace delivery only after paid sale', sql.includes("m->>'status'<>'sold'"));
@@ -65,7 +65,7 @@ test('licences and rental SQL last', sql.includes('014_rentals_and_access.sql'))
 test('revision 15 css loaded after v10 overrides', index.includes('assets/kapani-v10.css?v=13') &&
   index.includes('assets/kapani-v14-fixes.css?v=15') &&
   index.indexOf('assets/kapani-v10.css')<index.indexOf('assets/kapani-v14-fixes.css'));
-test('revision 15 main script cache buster', index.includes('assets/kapani-main-classic.js?v=15'));
+test('revision 16 main script cache buster', index.includes('assets/kapani-main-classic.js?v=16'));
 test('revision 10 SQL appended to full installer', sql.includes('-- ===== 015_subscriptions_and_news.sql ====='));
 test('installer and individual new migration equivalent', sql.includes(subscriptionNews.trim()));
 test('Plus profile frame fix follows subscription migration', sql.includes('-- ===== 016_profile_plus_frames.sql =====') && sql.includes(profileTiers.trim()));

@@ -1210,6 +1210,7 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 <link rel="stylesheet" href="assets/kapani-finishes.css?v=9">
 <link rel="stylesheet" href="assets/kapani-v10.css?v=13">
 <link rel="stylesheet" href="assets/kapani-v14-fixes.css?v=15">
+<link rel="stylesheet" href="assets/kapani-v16.css?v=16">
 </head>
 <body>
 
@@ -1442,10 +1443,10 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
     </div>
     <div class="home-label"><span>Сервисы посёлка</span><small>Выбирай, куда отправиться</small></div>
     <div class="quick-grid">
-        <div class="quick-card" onclick="navTo('jobs')" role="button" tabindex="0" aria-label="Перейти в магазин"><div class="qico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18l-2 13H5z M8 7V5a4 4 0 0 1 8 0v2"/></svg></div><div class="qlbl">Работа</div><div class="qsub">Ресурсы поселка</div></div>
+        <div class="quick-card" onclick="navTo('market')" role="button" tabindex="0" aria-label="Перейти на маркетплейс"><div class="qico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18l-2 13H5z M8 7V5a4 4 0 0 1 8 0v2"/></svg></div><div class="qlbl">К-маркет</div><div class="qsub">Объявления и товары</div></div>
         <div class="quick-card" onclick="navTo('taxi')" role="button" tabindex="0" aria-label="Вызвать такси"><div class="qico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14l2-6h12l2 6v5h-2v-2H6v2H4z M6 14h12 M8 17h.01 M16 17h.01"/></svg></div><div class="qlbl">Такси</div><div class="qsub">250₽ за км</div></div>
         <div class="quick-card" onclick="navTo('deliveryOrderPage')" role="button" tabindex="0" aria-label="Заказать доставку из бизнеса"><div class="qico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h12v10H3z M15 11h4l2 3v3h-6 M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M18 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg></div><div class="qlbl">Доставка</div><div class="qsub">Бизнесы и маркет</div></div>
-        <div class="quick-card" onclick="navTo('jobs')" role="button" tabindex="0" aria-label="Перейти к работе"><div class="qico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V7l8-4 8 4v13z M8 11h8 M8 15h8"/></svg></div><div class="qlbl">Работа</div><div class="qsub">Карьера & доход</div></div>
+        <div class="quick-card" onclick="navTo('jobs')" role="button" tabindex="0" aria-label="Перейти к работе"><div class="qico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h18v12H3z M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M3 13h18 M10 13v2h4v-2"/></svg></div><div class="qlbl">Работа</div><div class="qsub">Вакансии и заработок</div></div>
         <div class="quick-card" onclick="navTo('ratings')" role="button" tabindex="0" aria-label="Перейти к рейтингу"><div class="qico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l3 5h5l-3 5-5 2-5-2-3-5h5z M12 15v6 M8 21h8"/></svg></div><div class="qlbl">Рейтинг</div><div class="qsub">Топ жителей</div></div>
         <div class="quick-card" onclick="navTo('hospital')" role="button" tabindex="0" aria-label="Больница"><div class="qico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z M12 8v8 M8 12h8"/></svg></div><div class="qlbl">Больница</div><div class="qsub">Лёхин шалаш</div></div>
         <div class="quick-card" onclick="navTo('autoSchool')" role="button" tabindex="0" aria-label="Автошкола"><div class="qico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V8l8-5 8 5v12z M9 16h6 M12 13v6"/></svg></div><div class="qlbl">Автошкола</div><div class="qsub">Права и экзамены</div></div>
@@ -1954,8 +1955,6 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
         <button class="btn btn-primary" id="pushEnableBtn" onclick="handlePushBtn()">🔔 Включить</button>
         <div style="font-size:11px;text-align:center;margin-top:8px;" id="pushStatusText"></div>
         <div id="pushSettingsContainer" style="display:none;margin-top:12px;"></div>
-        <div id="pushWorkerStatus" style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5;white-space:pre-line;"></div>
-        <button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%;" onclick="kapaniPushRepair()">🔄 Переподключить push на этом устройстве</button>
         <button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;" onclick="testKapaniPush().catch(e=>toast('❌ '+(e&&e.message||e),'red'))">🧪 Проверить уведомления</button>
 
     </div>
@@ -2840,7 +2839,7 @@ window.kapaniLoadLeaflet = (function(){
 <script src="./functions/subscription-config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8" defer></script>
 <script src="./assets/supabase-bridge-classic.js" defer></script>
-<script src="./assets/kapani-main-classic.js?v=15" defer></script>
+<script src="./assets/kapani-main-classic.js?v=16" defer></script>
 
 <script>
 // ═══════════════════════════════════════════════════
