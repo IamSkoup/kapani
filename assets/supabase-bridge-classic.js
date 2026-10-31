@@ -11,13 +11,26 @@ if (!config.url || !config.anonKey) {
   throw new Error('Заполните supabase.url и supabase.anonKey в config.js');
 }
 
-// Supabase refresh tokens can be used only once. Keep one browser-wide lock
-// until the operation finishes, including when another tab is slow or asleep.
-// Aborting a queued lock after 60 seconds can make the SDK discard an otherwise
-// recoverable session when a background tab is resumed.
-async function authSessionLock(name, _timeout, callback) {
+// Allow auth restoration/refresh to queue behind an in-flight operation. A
+// previously unconditional 10-second abort turned slow mobile connections
+// into failed session restores (and the app then discarded the remembered nick).
+async function authSessionLock(name, timeout, callback) {
   if (!globalThis.navigator?.locks?.request) return callback();
-  return navigator.locks.request(name, { mode: 'exclusive' }, callback);
+  const options = { mode: 'exclusive' };
+  let timer;
+  if (Number.isFinite(timeout) && timeout > 0) {
+    const controller = new AbortController();
+    options.signal = controller.signal;
+    timer = setTimeout(() => controller.abort(), Math.max(60000, timeout));
+  }
+  try {
+    return await navigator.locks.request(name, options, () => {
+      clearTimeout(timer);
+      return callback();
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const supabase = createClient(config.url, config.anonKey, {

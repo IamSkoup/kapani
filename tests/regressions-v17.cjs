@@ -32,9 +32,8 @@ assert.match(ensureAuth,/throw profileError/,'failed profile lookup must not loo
 const boot=main.split('async function bootstrapKapaniAuthAndApp(){')[1].split('\n\/\/ DO NOT hide')[0];
 assert.doesNotMatch(boot,/localStorage\.removeItem\('kp_s'\)/,'bootstrap must not erase remembered nick');
 assert.match(boot,/withKapaniAuthRetry\(/);
-assert.match(boot,/if\(retry && !appStarted\)/);
-assert.match(boot,/rememberVerifiedKapaniIdentity\(auth\.currentUser\)/);
-assert.match(html,/supabase-bridge-classic\.js\?v=18/);
-assert.match(html,/kapani-main-classic\.js\?v=22/);
+assert.match(boot,/if\(!appStarted && currentNick===expectedNick\)/);
+assert.match(html,/supabase-bridge-classic\.js\?v=17/);
+assert.match(html,/kapani-main-classic\.js\?v=21/);
 
 console.log('OK: v17 secure resignation and persistent session regression contracts.');
