@@ -14,7 +14,7 @@ const migration=read('supabase/022_business_inbox_and_delivery_cart.sql');
 const check=(label,condition)=>assert.ok(condition,label);
 check('new styles loaded after legacy styles',html.includes('assets/kapani-v18-business.css?v=18') &&
   html.indexOf('assets/kapani-v18-business.css')>html.indexOf('assets/kapani-v14-fixes.css'));
-check('new JS is cache-busted',html.includes('kapani-main-classic.js?v=20') && html.includes('kapani-finishes.js?v=18'));
+check('new JS is cache-busted',html.includes('kapani-main-classic.js?v=21') && html.includes('kapani-finishes.js?v=18'));
 
 check('user can remove a final item from business basket',main.includes('if(nextQty <= 0) delete cart[prodId]'));
 check('zero quantity does not clamp to one',main.includes('Math.max(0, Math.min(100, parseInt(value,10)||0))'));

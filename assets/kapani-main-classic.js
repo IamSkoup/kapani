@@ -2226,6 +2226,7 @@ const LIVE_PAGE_BINDINGS={
     jobs:{q:()=>[appsRef()],render:()=>window.renderJobAppStatus&&window.renderJobAppStatus()},
     taxi:{q:()=>[],render:()=>renderTaxiHistory()},
     deliveryOrderPage:{q:()=>[deliveryCustomOrdersRef()],render:()=>renderMyDeliveryOrders()},
+    deliveryPage:{q:()=>[deliveryCustomOrdersRef()],render:()=>renderDeliveryCustomOrders()},
     janitorPage:{q:()=>[janitorSubsRef()],render:()=>renderJanitorPage()},
     profile:{q:()=>[wallRef(currentNick)],render:(snap)=>renderWallFeed((snap&&snap.val&&snap.val())||{})}
 };
@@ -3528,7 +3529,10 @@ async function renderWorkerPage(orders){
     const active=ordersArr.find(o=>o.worker===currentNick&&o.type===type&&(isDriver?DRIVER_ACTIVE_ORDER_STATUSES.has(String(o.status||'')):o.status==='in_progress'));
     if(active){
         const stableDriverKey=[active.id,active.status,active.info||'',active.client||'',active.price||0,active.clientLat||'',active.clientLng||'',active.destLat||'',active.destLng||'',active.driverVehicle||'',active.driverAvatar||''].join('|');
-        if(_driverUiKey===type+'|'+stableDriverKey) return;
+        if(_driverUiKey===type+'|'+stableDriverKey){
+            if(!isDriver) void renderDeliveryCustomOrders();
+            return;
+        }
         _driverUiKey=type+'|'+stableDriverKey;
         const driverAction=active.status==='accepted'?`<button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="startSharingLocation()">📍 Начать движение</button>`:active.status==='driver_arriving'?`<button class="btn btn-gold btn-sm" style="margin-top:8px;" onclick="beginTaxiTrip('${active.id}')">🚕 Клиент найден — начать поездку</button>`:active.status==='in_progress'?`<button class="btn btn-gold btn-sm" style="margin-top:8px;" onclick="finishTaxiTrip('${active.id}')">🏁 Завершить поездку</button>`:'';
         el.innerHTML=`<div class="work-order work-active"><div style="color:var(--primary);font-size:11px;font-weight:900;text-transform:uppercase;margin-bottom:8px;">🟢 Активный заказ</div><div style="font-weight:700;font-size:15px;margin-bottom:4px;">${escHtml(active.info)}</div>${active.address?`<div style="color:var(--muted);font-size:13px;margin-bottom:8px;">📍 ${escHtml(active.address)}</div>`:''}<div style="color:var(--muted);font-size:13px;margin-bottom:8px;">Клиент: <b style="color:var(--text)">${escHtml(active.client)}</b> · ${active.price}₽</div>${isDriver&&active.type==='taxi'?`<div style="font-size:13px;color:var(--primary);font-weight:900;margin-bottom:12px;">🛵 ${escHtml(active.driverVehicle||u.vehicle||'Транспорт не указан')}</div>`:''}<button class="btn btn-ghost" style="color:var(--red);border-color:var(--red-dim);font-size:12px;" onclick="abandonOrder('${active.id}')">⚠️ Отказаться (−35₽)</button>${driverAction}</div>`;
@@ -13537,15 +13541,20 @@ window.cancelCustomDelivery=async function(orderId){
 async function renderDeliveryCustomOrders(){
     const uSnap=await get(userRef(currentNick)); if(!uSnap.exists())return;
     const u=uSnap.val(); if(!hasMunicipalJob(u,'Доставщик')&&currentNick!==ADMIN)return;
-    const all=(await get(deliveryCustomOrdersRef())).val()||{};
-    const waiting=Object.values(all).filter(o=>o.status==='waiting');
-    const proposed=Object.values(all).filter(o=>o.status==='price_proposed'&&o.client!==currentNick);
-    const myActive=Object.values(all).filter(o=>o.worker===currentNick&&['client_confirmed','in_progress','delivered'].includes(o.status));
     const delivList=qs('deliveryList'); if(!delivList)return;
-    // A dedicated host is replaced on each refresh. Appending directly to the
-    // worker list previously duplicated the same order after every update.
     let host=qs('kapaniCustomDeliveryQueue');
     if(!host){host=document.createElement('div');host.id='kapaniCustomDeliveryQueue';delivList.appendChild(host);}
+    let all;
+    try{all=(await get(deliveryCustomOrdersRef())).val()||{};}
+    catch(error){
+        console.warn('[delivery queue]',error);
+        host.innerHTML='<div class="work-order" role="alert">Не удалось загрузить заказы. Проверьте соединение и откройте раздел ещё раз.</div>';
+        return;
+    }
+    const orders=Object.entries(all).map(([id,order])=>({...order,id:order.id||id}));
+    const waiting=orders.filter(o=>o.status==='waiting'&&!o.worker);
+    const proposed=orders.filter(o=>o.status==='price_proposed'&&o.client!==currentNick);
+    const myActive=orders.filter(o=>o.worker===currentNick&&['client_confirmed','in_progress','delivered'].includes(o.status));
     const pool=[...new Map([...waiting,...proposed,...myActive]
         .filter(o=>o?.id).map(o=>[o.id,o])).values()];
     if(!pool.length){host.innerHTML='';return;}
@@ -13556,7 +13565,7 @@ async function renderDeliveryCustomOrders(){
         if(!isMine&&o.status==='waiting'&&['business','marketplace'].includes(o.source)) priceControl=`<div style="margin-top:7px;"><div style="font-size:12px;color:var(--gold);font-weight:900;margin-bottom:5px;">🚚 Цена доставки: ${Number(o.deliveryPrice||deliveryDistancePrice(Number(o.distanceKm||0))||0).toLocaleString()} ₽</div><button class="btn btn-primary btn-sm" onclick="takeCustomDelivery('${o.id}')">🛵 Взять заказ</button></div>`;
         if(!isMine&&o.status==='waiting'&&o.source==='business') priceControl=`<button class="btn btn-primary btn-sm" onclick="takeCustomDelivery('${o.id}')">✅ Взять заказ (${Number(o.deliveryPrice||0).toLocaleString()} ₽)</button>`;
         const mineActions=isMine?`<div style="display:flex;gap:6px;flex-wrap:wrap;">${o.status==='client_confirmed'?`<button class="btn btn-primary btn-sm" onclick="startCustomDelivery('${o.id}')">🛵 Начать доставку</button>`:''}${o.status==='in_progress'?`<button class="btn btn-gold btn-sm" onclick="completeCustomDelivery('${o.id}')">✅ Доставлено</button>`:''}${o.status==='delivered'&&!o.workerConfirmed?`<button class="btn btn-gold btn-sm" onclick="confirmCustomDeliveryDone('${o.id}')">✅ Завершить</button>`:''}</div>`:'';
-        html+=`<div class="work-order" data-delivery-order-id="${escAttr(o.id)}" style="margin-bottom:10px;"><div style="font-weight:900;font-size:14px;">${escHtml(o.sourceLabel||'')} «${escHtml(o.from)}»</div><div style="font-size:12px;color:var(--muted);">📋 ${escHtml(o.items)}</div><div style="font-size:12px;color:var(--muted);">📍 ${escHtml(point(o.destLat,o.destLng) && /^\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*$/.test(String(o.address||'')) ? 'Место доставки отмечено на карте' : (o.address||'Адрес не указан'))}</div>${point(o.destLat,o.destLng)?`<button class="btn btn-ghost btn-sm" type="button" onclick="showCustomDeliveryPoint('${jsEsc(o.id)}')">🗺 Показать точку на карте</button><div class="delivery-point-map" data-order-id="${escAttr(o.id)}" style="display:none;height:240px;margin:8px 0;border-radius:12px;overflow:hidden;"></div>`:''}${o.notes?`<div class="delivery-customer-note">Комментарий клиента — ${escHtml(o.notes)}</div>`:''}<div style="font-size:12px;color:var(--muted);">👤 ${escHtml(o.client)}</div>${o.contact?`<div style="font-size:12px;color:var(--muted);">📞 ${escHtml(o.contact)}</div>`:''}${o.distanceKm!=null?`<div style="font-size:12px;color:var(--muted);">📏 ${Number(o.distanceKm).toFixed(2)} км</div>`:''}${o.priceOffer!=null?`<div style="font-size:12px;color:var(--gold);font-weight:900;">💰 ${Number(o.priceOffer).toLocaleString()} ₽</div>`:''}${priceControl}${mineActions}</div>`;
+        html+=`<div class="work-order" data-delivery-order-id="${escAttr(o.id)}" style="margin-bottom:10px;"><div style="font-weight:900;font-size:14px;">${escHtml(o.sourceLabel||'')} «${escHtml(o.from)}»</div><div style="font-size:12px;color:var(--muted);">📋 ${escHtml(o.items)}</div><div style="font-size:12px;color:var(--muted);">📍 ${escHtml(point(o.destLat??o.deliveryLat,o.destLng??o.deliveryLng) && /^\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*$/.test(String(o.address||'')) ? 'Место доставки отмечено на карте' : (o.address||'Адрес не указан'))}</div>${point(o.destLat??o.deliveryLat,o.destLng??o.deliveryLng)?`<button class="btn btn-ghost btn-sm" type="button" onclick="showCustomDeliveryPoint('${jsEsc(o.id)}')">🗺 Показать точку на карте</button><div class="delivery-point-map" data-order-id="${escAttr(o.id)}" style="display:none;height:240px;margin:8px 0;border-radius:12px;overflow:hidden;"></div>`:''}${o.notes?`<div class="delivery-customer-note">Комментарий клиента — ${escHtml(o.notes)}</div>`:''}<div style="font-size:12px;color:var(--muted);">👤 ${escHtml(o.client)}</div>${o.contact?`<div style="font-size:12px;color:var(--muted);">📞 ${escHtml(o.contact)}</div>`:''}${o.distanceKm!=null?`<div style="font-size:12px;color:var(--muted);">📏 ${Number(o.distanceKm).toFixed(2)} км</div>`:''}${o.priceOffer!=null?`<div style="font-size:12px;color:var(--gold);font-weight:900;">💰 ${Number(o.priceOffer).toLocaleString()} ₽</div>`:''}${priceControl}${mineActions}</div>`;
     });
     host.querySelectorAll(".delivery-point-map").forEach(el=>{try{el._kapaniMap?.remove();}catch(error){console.warn("[delivery map cleanup]",error);}});
     host.innerHTML=html;
@@ -13569,10 +13578,10 @@ window.showCustomDeliveryPoint=async function(orderId){
     if(mapEl._kapaniMap){mapEl._kapaniMap.remove();mapEl._kapaniMap=null;mapEl.style.display='none';return;}
     try{
         const order=(await get(deliveryCustomOrderRef(orderId))).val();
-        if(!order||!point(order.destLat,order.destLng))throw new Error('Точка доставки недоступна');
+        if(!order||!point(order.destLat??order.deliveryLat,order.destLng??order.deliveryLng))throw new Error('Точка доставки недоступна');
         await window.kapaniLoadLeaflet();
         mapEl.style.display='block';
-        const lat=Number(order.destLat),lng=Number(order.destLng);
+        const lat=Number(order.destLat??order.deliveryLat),lng=Number(order.destLng??order.deliveryLng);
         const map=L.map(mapEl).setView([lat,lng],16);
         mapEl._kapaniMap=map;
         addSatelliteLayer(map);
