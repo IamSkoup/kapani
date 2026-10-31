@@ -39,34 +39,41 @@ let kapaniVerifiedIdentity = null;
 async function ensureAuth(){
     if(!authInstance) authInstance = {currentUser:null};
     authModule = { signOut: () => supabase.auth.signOut() };
-    const {data,error}=await supabase.auth.getUser();
-    // A failed network request is not evidence that the user signed out.
-    // Preserve the last verified identity and let startup retry the check.
-    if(error && !/session missing/i.test(String(error.message))){
-        console.debug('[Kapani auth]',error.message);
-        throw error;
-    }
-    const signedUser=data?.user;
-    if(!signedUser){
-        kapaniVerifiedIdentity=null;
-        authInstance.currentUser=null;
-        return authInstance;
-    }
-    // Local storage and user-editable metadata are not proof of ownership.
-    // Resolve the nickname exclusively by the signed-in user's database UUID.
-    let verifiedNick=kapaniVerifiedIdentity?.id===signedUser.id ? kapaniVerifiedIdentity.nick : null;
-    if(!verifiedNick){
-        const {data:owner,error:profileError}=await supabase.from('kp_profiles')
-            .select('nickname').eq('user_id',signedUser.id).maybeSingle();
-        if(profileError){
-            console.debug('[Kapani auth] profile identity:',profileError.message);
-            throw profileError;
+    // All callers share the same restoration check. In particular, a network
+    // error must never replace an already verified identity with null.
+    if(authInitPromise) return authInitPromise;
+    authInitPromise=(async()=>{
+        const {data:sessionData,error:sessionError}=await supabase.auth.getSession();
+        if(sessionError) throw sessionError;
+        const session=sessionData?.session;
+        if(!session?.access_token){
+            authInstance.currentUser=null;
+            kapaniVerifiedIdentity=null;
+            return authInstance;
         }
-        verifiedNick=owner?.nickname||null;
-        if(verifiedNick) kapaniVerifiedIdentity={id:signedUser.id,nick:verifiedNick};
-    }
-    authInstance.currentUser=verifiedNick ? {uid:verifiedNick,id:signedUser.id,email:signedUser.email} : null;
-    return authInstance;
+
+        // getSession restores/refreshes the persisted token, but its user
+        // object is browser-controlled. Verify account ownership via getUser.
+        const {data,error}=await supabase.auth.getUser();
+        if(error || !data?.user){
+            // This can happen while another tab is refreshing a token, or when
+            // the network is unstable. The SDK will retry; don't force logout.
+            throw error || new Error('Сервер пока не подтвердил сессию Supabase');
+        }
+        const signedUser=data.user;
+        let verifiedNick=kapaniVerifiedIdentity?.id===signedUser.id ? kapaniVerifiedIdentity.nick : null;
+        if(!verifiedNick){
+            const {data:owner,error:profileError}=await supabase.from('kp_profiles')
+                .select('nickname').eq('user_id',signedUser.id).maybeSingle();
+            if(profileError) throw profileError;
+            verifiedNick=owner?.nickname||null;
+            if(verifiedNick) kapaniVerifiedIdentity={id:signedUser.id,nick:verifiedNick};
+        }
+        authInstance.currentUser=verifiedNick ? {uid:verifiedNick,id:signedUser.id,email:signedUser.email} : null;
+        return authInstance;
+    })();
+    try{return await authInitPromise;}
+    finally{authInitPromise=null;}
 }
 async function ensureFunctions(){
     throw new Error('Cloud Functions больше не используются');
@@ -340,6 +347,20 @@ let currentNick = localStorage.getItem('kp_s') || sessionStorage.getItem('kp_s')
 let _kapaniSessionPassword = null;
 function syncCurrentNick(){ window.currentNick = currentNick; return currentNick; }
 syncCurrentNick();
+function rememberVerifiedKapaniIdentity(identity){
+    if(!identity?.uid) return;
+    const verifiedNick=identity.uid;
+    currentNick=verifiedNick;
+    syncCurrentNick();
+    try{
+        let previous=null;
+        try{previous=JSON.parse(localStorage.getItem('kp_auth')||'null');}catch(_){/* corrupt display cache */}
+        localStorage.setItem('kp_s',verifiedNick);
+        sessionStorage.setItem('kp_s',verifiedNick);
+        const label=previous?.nick===verifiedNick ? (previous.displayName||previous.name||verifiedNick) : verifiedNick;
+        localStorage.setItem('kp_auth',JSON.stringify({nick:verifiedNick,name:label,displayName:label}));
+    }catch(e){console.debug('[Kapani auth] Не удалось сохранить отображаемый ник:',e);}
+}
 let appStarted = false;
 let rememberedAuth = null;
 try { rememberedAuth = JSON.parse(localStorage.getItem('kp_auth') || 'null'); } catch(e) { rememberedAuth = null; }
@@ -1748,17 +1769,9 @@ function startApp() {
     if(bottom) bottom.style.display='none';
     if(main) main.style.display='none';
 
-    // Resolve the persisted identity before binding any user-scoped listeners.
-    // This prevents notifications/user listeners from being attached to an
-    // outdated or empty nick during the startup race.
-    try {
-        const auth = JSON.parse(localStorage.getItem('kp_auth') || 'null');
-        if(auth && auth.nick && (!currentNick || currentNick!==auth.nick)) {
-            localStorage.setItem('kp_s', auth.nick);
-            sessionStorage.setItem('kp_s', auth.nick);
-            currentNick = auth.nick;
-        }
-    } catch(e) {}
+    // The Supabase-verified UUID/profile pair is authoritative. A stale
+    // kp_auth nickname from a previous login must never overwrite it here.
+    if(authInstance?.currentUser?.uid) rememberVerifiedKapaniIdentity(authInstance.currentUser);
     syncCurrentNick();
     try { attachListeners(); } catch(e) { console.error('[Kapani] listeners init:',e); }
 
@@ -1801,6 +1814,17 @@ function startApp() {
               try { requestPersistentStorage(); } catch(e) {}
               if(typeof window.startKapaniRentExpiryWatcher === 'function') window.startKapaniRentExpiryWatcher();
           }, {timeout: 1500});
+      }).catch(error=>{
+          // A temporarily unavailable profile request must not strand a
+          // successfully signed-in user on a blank loading/auth screen.
+          console.warn('[Kapani] profile loading delayed:',error?.message||error);
+          try{revealApp();}catch(e){
+              if(header)header.style.display='flex';
+              if(bottom)bottom.style.display='flex';
+              if(main)main.style.display='block';
+          }
+          hideLoadingSafe();
+          toast('Профиль пока не загрузился. Соединение восстановится без выхода из аккаунта.','gold');
       });
 }
 
@@ -12070,53 +12094,54 @@ function hideLoadingSafe(){ clearTimeout(_loadingTimeout); hideLoading(); }
 // connection; PWA push notifications require an HTTPS origin.
 if(location.protocol === 'file:') console.info('[Kapani] Локальный запуск через file://. Для push используйте HTTPS.');
 
+let kapaniBootstrapBusy=false;
+let kapaniBootstrapRetryTimer=null;
 async function bootstrapKapaniAuthAndApp(){
-    if(!currentNick){
-        setTimeout(hideLoadingSafe, 600);
-        return;
-    }
-
-    const expectedNick=currentNick;
+    if(appStarted || kapaniBootstrapBusy) return;
+    kapaniBootstrapBusy=true;
+    const initialNick=currentNick;
+    let retry=false;
     try{
-        // Do not erase saved login information on a single network/lock error.
-        // Supabase restores persisted tokens itself; getUser validates identity.
-        const auth = await withKapaniAuthRetry(()=>ensureAuth(),'startup session',3);
-        if(currentNick!==expectedNick) return;
-
-        if(auth.currentUser?.uid === expectedNick){
-            console.info('[Kapani auth] verified Supabase session restored:', auth.currentUser.uid);
-        }else if(_kapaniSessionPassword){
-            try{
-                await requireKapaniServerSession(8000);
-            }catch(e){
-                console.warn('[Kapani auth] startup session recovery:', e?.message || e);
-                scheduleKapaniServerSessionRetry(expectedNick);
-                throw e;
-            }
+        // Always check Supabase, even when kp_s was lost or still holds the
+        // previous account. A signed-in UUID, not browser nickname storage,
+        // determines whose profile may be loaded.
+        const auth=await withKapaniAuthRetry(()=>ensureAuth(),'startup session',3);
+        if(appStarted || (initialNick && currentNick!==initialNick)) return;
+        if(auth.currentUser?.uid){
+            rememberVerifiedKapaniIdentity(auth.currentUser);
+            console.info('[Kapani auth] restored signed-in account:',auth.currentUser.uid);
+            startApp();
+        }else if(_kapaniSessionPassword && currentNick){
+            const recovered=await requireKapaniServerSession(8000);
+            rememberVerifiedKapaniIdentity(recovered);
+            startApp();
         }else{
-            console.warn('[Kapani auth] Supabase session unavailable; showing login without deleting saved identity');
+            // This is an actual missing session, rather than a momentary
+            // failure of the verification request. Keep the remembered nick
+            // intact so the user can sign in without losing account details.
             hideLoadingSafe();
-            return;
+            console.info('[Kapani auth] No active Supabase session; login is available');
         }
     }catch(e){
         console.warn('[Kapani auth] startup init:', e?.message || e);
         hideLoadingSafe();
-        // Never render the protected app before the server verifies the nick.
-        // Retry quietly when a slow/unstable connection prevented validation.
-        if(currentNick===expectedNick)
-            setTimeout(()=>{ if(!appStarted && currentNick===expectedNick) void bootstrapKapaniAuthAndApp(); },5000);
-        return;
-    }
-
-    try {
-        startApp();
-    } catch(e) {
-        console.error('[startApp]', e);
-        hideLoadingSafe();
+        retry=isRetryableKapaniAuthError(e) || /пока не подтвердил|lock|failed to fetch/i.test(String(e?.message||''));
+    }finally{
+        kapaniBootstrapBusy=false;
+        if(retry && !appStarted){
+            clearTimeout(kapaniBootstrapRetryTimer);
+            kapaniBootstrapRetryTimer=setTimeout(()=>void bootstrapKapaniAuthAndApp(),5000);
+        }
     }
 }
 
-// DO NOT hide on window.load — wait for Firebase Auth initialization + app data
+// Recheck after network recovery and foregrounding, without clearing tokens or
+// launching concurrent refresh attempts against a one-time refresh token.
+window.addEventListener('online',()=>{if(!appStarted)void bootstrapKapaniAuthAndApp();});
+document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden && !appStarted)void bootstrapKapaniAuthAndApp();
+});
+// DO NOT hide on window.load — wait for Supabase Auth initialization + app data
 void bootstrapKapaniAuthAndApp();
 if(curPage==='tasks') renderTasks();
 
