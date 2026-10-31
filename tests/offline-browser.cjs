@@ -9,7 +9,8 @@ const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'assets/kapani-main-classic.js'), 'utf8');
 
 (async () => {
-  const browser = await chromium.launch({headless:true,args:['--no-sandbox']});
+  const executablePath = process.env.CHROMIUM_PATH || (fs.existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : undefined);
+  const browser = await chromium.launch({headless:true,args:['--no-sandbox'],...(executablePath ? {executablePath} : {})});
   try {
     for (const [label, width, height] of [['desktop', 1280, 800], ['mobile', 390, 844]]) {
       const page = await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
@@ -22,6 +23,8 @@ const source = fs.readFileSync(path.join(root, 'assets/kapani-main-classic.js'),
       await page.addStyleTag({path:path.join(root,'assets/kapani-forest.css')});
       await page.addStyleTag({path:path.join(root,'assets/kapani-v8.css')});
       await page.addStyleTag({path:path.join(root,'assets/kapani-v10.css')});
+      // Layout assertions must measure the final position, not entrance animation frames.
+      await page.addStyleTag({content:'*,*::before,*::after{animation:none !important;transition:none !important}'});
       const syntax = await page.evaluate(code => {
         try { new Function(code); return null; } catch(e) { return e.message; }
       }, source);

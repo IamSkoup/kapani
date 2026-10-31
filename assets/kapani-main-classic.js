@@ -2932,7 +2932,7 @@ function announceIncomingNotification(n){
     void showForegroundKapaniPush({
         title:n.title,
         body:text,
-        category:n.cat,
+        category:n.cat||n.category||n.type,
         notificationId:n.id,
         url:n.url,
         source:'inbox'
@@ -7379,17 +7379,17 @@ window.adminVerifyAccount=async function(nick){
     }
 };
 window.adminDeleteAccount=async function(nick){
-    if(!confirm(`Закрыть аккаунт ${nick}? Вход будет заблокирован, профиль скрыт, финансовая история сохранена.`))return;
+    if(!confirm(`Удалить аккаунт ${nick} без возможности восстановления? Финансовая история сохранится в закрытом архиве.`))return;
     try{
-        const {data,error}=await supabase.rpc('kp_mayor_close_account',{p_target:nick});
+        const {data,error}=await supabase.rpc('kp_mayor_delete_account',{p_target:nick});
         if(error)throw error;
-        if(!data?.ok)throw new Error('Сервер не подтвердил закрытие');
+        if(!data?.deleted)throw new Error('Сервер не подтвердил удаление');
         if(allUsersCache)delete allUsersCache[nick];
         allUsersCacheLoaded=true;
         renderHomeStats_users(allUsersCache);
-        toast(`Аккаунт ${nick} закрыт`,'green');
+        toast(`Аккаунт ${nick} удалён`,'green');
         await renderUnverifiedAccounts();
-    }catch(error){toast('Закрытие не выполнено: '+(error.message||error),'red');}
+    }catch(error){toast('Удаление не выполнено: '+(error.message||error),'red');}
 };
 window.renderUnverifiedAccounts=async function(){
     const el=qs('unverifiedAccounts');if(!el)return;
@@ -7410,7 +7410,7 @@ window.renderUnverifiedAccounts=async function(){
                 </div>
                 <div style="display:flex;gap:8px;">
                     <button class="btn btn-primary btn-sm" onclick="adminVerifyAccount('${escHtml(nick)}')">✅ Подтвердить</button>
-                    <button class="btn btn-red btn-sm" onclick="adminDeleteAccount('${escHtml(nick)}')">🚫 Закрыть</button>
+                    <button class="btn btn-red btn-sm" onclick="adminDeleteAccount('${escHtml(nick)}')">🗑 Удалить</button>
                 </div>
             </div>
         </div>
@@ -14433,7 +14433,19 @@ updateTaxiCalc=function(){
 };
 const initMapV7=window.initTaxiMap;window.initTaxiMap=async()=>{const map=await initMapV7();if(!fromCoords){selectingPoint='from';qs('btnFromMap')?.classList.add('selecting');}return map;};
 onMapClick=function(e){const {lat,lng}=e.latlng;if(!selectingPoint)selectingPoint=fromCoords?'to':'from';if(selectingPoint==='from'){setFromPoint(lat,lng);qs('tFrom').value=`${lat.toFixed(5)}, ${lng.toFixed(5)}`;selectingPoint='to';qs('btnFromMap').classList.remove('selecting');qs('btnToMap').classList.add('selecting');toast('Теперь отметьте на карте место назначения','green');}else{if(!fromCoords)return;setToPoint(lat,lng);qs('tTo').value=`${lat.toFixed(5)}, ${lng.toFixed(5)}`;selectingPoint=null;qs('btnToMap').classList.remove('selecting');}};
-window.orderTaxi=()=>action('taxi-create',async()=>{if(!fromCoords||!toCoords)throw new Error('Отметьте две точки на карте');const coords=taxiCoordinates();if(!taxiQuote||taxiQuote.coords!==coords.join(','))throw new Error('Дождитесь точного расчёта цены на сервере');const data={clientLat:fromCoords.lat,clientLng:fromCoords.lng,destLat:toCoords.lat,destLng:toCoords.lng,quotedPrice:taxiQuote.price,info:qs('tFrom').value+' → '+qs('tTo').value};const key='taxi:'+JSON.stringify(data);const order=await service('taxi','create',requestID(key),data);v8.requests.delete(key);toast('Зарезервировано '+money(order.price)+'. '+(order.worker?'Водитель назначен.':'Ищем водителя.'),'green');});
+async function notifyTaxiDriversOfOrder(order){
+  try{
+    const users=(await get(ref(db,'users'))).val()||{};
+    const recipients=order.worker?[order.worker]:Object.entries(users)
+      .filter(([nick,u])=>nick!==order.client&&hasMunicipalJob(u,'Водитель'))
+      .map(([nick])=>nick);
+    await Promise.all(recipients.map(nick=>pushNotification(nick,
+      `Новый заказ такси: ${order.info||'поездка по карте'}; оплата ${money(order.price)}`,
+      'taxi_orders',{source:'taxi',sourceMessageId:String(order.id||''),
+        url:`${new URL('./',location.href).pathname}?kpSection=driverPage`})));
+  }catch(error){console.warn('[taxi push]',error);}
+}
+window.orderTaxi=()=>action('taxi-create',async()=>{if(!fromCoords||!toCoords)throw new Error('Отметьте две точки на карте');const coords=taxiCoordinates();if(!taxiQuote||taxiQuote.coords!==coords.join(','))throw new Error('Дождитесь точного расчёта цены на сервере');const data={clientLat:fromCoords.lat,clientLng:fromCoords.lng,destLat:toCoords.lat,destLng:toCoords.lng,quotedPrice:taxiQuote.price,info:qs('tFrom').value+' → '+qs('tTo').value};const key='taxi:'+JSON.stringify(data);const order=await service('taxi','create',requestID(key),data);v8.requests.delete(key);toast('Зарезервировано '+money(order.price)+'. '+(order.worker?'Водитель назначен.':'Ищем водителя.'),'green');void notifyTaxiDriversOfOrder(order);});
 window.takeOrder=id=>action('taxi:'+id,()=>service('taxi','take',id));
 window.beginTaxiTrip=id=>action('taxi:'+id,()=>service('taxi','start',id));
 window.finishTaxiTrip=id=>action('taxi:'+id,async()=>{await service('taxi','finish',id);window.stopSharingLocation();});
@@ -14444,7 +14456,8 @@ window.abandonOrder=id=>action('taxi-release:'+id,async()=>{
   const o=(await get(orderRef(id))).val();
   if(o?.type!=='taxi')return abandonPriorV9(id);
   if(!confirm('Вернуть заказ другим водителям? Пассажир продолжит ждать машину.'))return;
-  await service('taxi','release',id);
+  const released=await service('taxi','release',id);
+  void notifyTaxiDriversOfOrder(released);
   window.stopSharingLocation();
   toast('Заказ снова ищет водителя','green');
   await window.renderDriverOrders?.();
@@ -14766,9 +14779,9 @@ window.kapaniBuyBikeLicense=()=>action('civic-bike',async()=>{if(!confirm('Ку�
 window.kapaniBuyScooterLicense=()=>action('civic-scooter',async()=>{if(!confirm('Подать заявку на экзамен и права за 1 500 ₽? Мэр проверит экзамен. При отказе оплата вернётся.'))return;await civic('scooter');window.kpContactMayor('Здравствуйте! Подал заявку на права на скутер. Хочу пройти экзамен.');});
 window.kapaniBuyKEducation=()=>action('civic-education',async()=>{if(!confirm('Оплатить К-образование за 2 000 ₽ и отправить заявку в мэрию?'))return;await civic('education');});
 window.submitJanitorDone=()=>action('janitor-submit',async()=>{if(!window._janitorProofData)throw new Error('Прикрепите фото выполненной работы');await civic('janitor',{photo:window._janitorProofData,comment:qs('janitorProofComment')?.value.trim()});window._janitorProofData=null;await renderJanitorPage();});
-window.submitPoliceRequest=()=>action('police-request',async()=>{await civic('police',{target:qs('polTarget')?.value.trim(),type:qs('polType')?.value==='delete'?'freeze':qs('polType')?.value,amount:Number(qs('polAmount')?.value||0),reason:qs('polReason')?.value.trim()});});
+window.submitPoliceRequest=()=>action('police-request',async()=>{const target=qs('polTarget')?.value.trim(),reason=qs('polReason')?.value.trim();if(qs('polType')?.value==='delete'){const key='police-delete:'+target+':'+reason;await rpc('kp_police_request_delete_v26',{p_id:requestID(key),p_target:target,p_reason:reason});v8.requests.delete(key);toast('Заявка на удаление отправлена мэру','green');}else await civic('police',{target,type:'fine',amount:Number(qs('polAmount')?.value||0),reason});});
 window.submitBizDeleteRequest=()=>action('business-close',async()=>{await civic('business_close',{bizId:_pendingDeleteBizId,reason:qs('bizDeleteReason')?.value.trim()});closeBizDeleteRequestModal();});
-window.kpReviewCivic=(kind,id,accept)=>action('review:'+id,async()=>{await rpc('kp_civic_v8',{p_action:accept?'approve':'reject',p_kind:kind,p_id:id});await window.kpLoadCivic();await renderAdmin();toast('Решение сохранено','green');});
+window.kpReviewCivic=(kind,id,accept)=>action('review:'+id,async()=>{const request=kind==='police'?(await get(ref(db,`policeRequests/${id}`))).val():null;if(accept&&kind==='police'&&['delete','freeze'].includes(request?.type)){if(!confirm(`Удалить аккаунт ${request.target} без возможности восстановления?`))return;await rpc('kp_mayor_review_delete_request',{p_id:id});}else await rpc('kp_civic_v8',{p_action:accept?'approve':'reject',p_kind:kind,p_id:id});await window.kpLoadCivic();await renderAdmin();toast('Решение сохранено','green');});
 window.kapaniCloseKEducation=(nick,id='')=>action('education-close:'+nick,async()=>{
     if(currentNick!==ADMIN)throw new Error('Закрывать заявки может только мэр');
     if(!confirm(`Закрыть заявку на К-образование жителя ${nick}? Оплата останется в истории, повторное списание не производится.`))return;
@@ -14778,7 +14791,7 @@ window.kapaniCloseKEducation=(nick,id='')=>action('education-close:'+nick,async(
 });
 window.approvePoliceRequest=id=>window.kpReviewCivic('police',id,true);window.rejectPoliceRequest=id=>window.kpReviewCivic('police',id,false);
 window.adminApproveBizDelete=id=>window.kpReviewCivic('business_close',id,true);window.adminRejectBizDelete=id=>window.kpReviewCivic('business_close',id,false);
-window.kpLoadCivic=async()=>{if(currentNick!==ADMIN)return;let host=qs('v8Civic');if(!host){host=document.createElement('div');host.className='card';host.id='v8Civic';qs('adminPage').prepend(host);}const queues=await Promise.all(['civicRequests','janitorSubmissions','policeRequests','bizDeleteRequests'].map(async branch=>[branch,(await get(ref(db,branch))).val()||{}]));const labels={education:'К-образование',scooter:'Права на скутер',bike:'Права на велосипед',janitor:'Отчёт уборщика',police:'Обращение полиции',business_close:'Закрытие бизнеса'};host.innerHTML='<h2>Единая очередь заявок</h2><p class="v8-muted">Заявки на работу и открытие бизнеса находятся в своих блоках ниже. Решение сохраняется вместе с выплатой или возвратом.</p>'+queues.flatMap(([branch,items])=>Object.entries(items).filter(([,x])=>x.status==='pending').map(([id,x])=>{const kind=x.kind||({janitorSubmissions:'janitor',policeRequests:'police',bizDeleteRequests:'business_close'})[branch];return `<article class="v8-application"><div class="v8-eyebrow">${html(labels[kind]||kind)}</div><h3>${html(x.from||x.worker||x.owner||x.officer)}</h3><p>${html(x.reason||x.comment||'Заявка ожидает проверки')}</p>${x.photo?`<img class="v8-proof" src="${html(safeURL(x.photo))}" alt="Фото отчёта" loading="lazy">`:''}<p>${kind==='janitor'?'Вознаграждение после одобрения: 500 ₽':kind==='scooter'?'Одобрить только после проверки экзамена':kind==='police'?`Житель: ${html(x.target)} · ${x.type==='fine'?money(x.amount):'Заморозка аккаунта'}`:''}</p><div class="v8-actions">${button('Одобрить',`kpReviewCivic('${kind}','${jsEsc(id)}',true)`)}${button('Отклонить',`kpReviewCivic('${kind}','${jsEsc(id)}',false)`,'btn btn-ghost')}</div></article>`;})).join('');};
+window.kpLoadCivic=async()=>{if(currentNick!==ADMIN)return;let host=qs('v8Civic');if(!host){host=document.createElement('div');host.className='card';host.id='v8Civic';qs('adminPage').prepend(host);}const queues=await Promise.all(['civicRequests','janitorSubmissions','policeRequests','bizDeleteRequests'].map(async branch=>[branch,(await get(ref(db,branch))).val()||{}]));const labels={education:'К-образование',scooter:'Права на скутер',bike:'Права на велосипед',janitor:'Отчёт уборщика',police:'Обращение полиции',business_close:'Закрытие бизнеса'};host.innerHTML='<h2>Единая очередь заявок</h2><p class="v8-muted">Заявки на работу и открытие бизнеса находятся в своих блоках ниже. Решение сохраняется вместе с выплатой или возвратом.</p>'+queues.flatMap(([branch,items])=>Object.entries(items).filter(([,x])=>x.status==='pending').map(([id,x])=>{const kind=x.kind||({janitorSubmissions:'janitor',policeRequests:'police',bizDeleteRequests:'business_close'})[branch];return `<article class="v8-application"><div class="v8-eyebrow">${html(labels[kind]||kind)}</div><h3>${html(x.from||x.worker||x.owner||x.officer)}</h3><p>${html(x.reason||x.comment||'Заявка ожидает проверки')}</p>${x.photo?`<img class="v8-proof" src="${html(safeURL(x.photo))}" alt="Фото отчёта" loading="lazy">`:''}<p>${kind==='janitor'?'Вознаграждение после одобрения: 500 ₽':kind==='scooter'?'Одобрить только после проверки экзамена':kind==='police'?`Житель: ${html(x.target)} · ${x.type==='fine'?money(x.amount):'Удаление аккаунта'}`:''}</p><div class="v8-actions">${button('Одобрить',`kpReviewCivic('${kind}','${jsEsc(id)}',true)`)}${button('Отклонить',`kpReviewCivic('${kind}','${jsEsc(id)}',false)`,'btn btn-ghost')}</div></article>`;})).join('');};
 
 window.payoutJanitorSubmission=id=>window.kpReviewCivic('janitor',id,true);window.rejectJanitorSubmission=id=>window.kpReviewCivic('janitor',id,false);
 

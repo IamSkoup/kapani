@@ -202,6 +202,8 @@ function channelFor(branch) {
   if (existing) return existing;
   const channel = supabase.channel(`kapani-tree-${branch}`);
   let pending = false;
+  let seenRevision = null;
+  let checkingRevision = false;
   existing = {
     count: 0,
     channel,
@@ -210,17 +212,46 @@ function channelFor(branch) {
       pending = true;
       queueMicrotask(() => {
         pending = false;
-        for (const entry of watchers.values()) {
+        for (const [key, entry] of watchers) {
           if (branchOf(entry.reference.path) !== branch) continue;
-          get(entry.reference).then(entry.callback).catch(entry.onError);
+          const sequence = ++entry.sequence;
+          get(entry.reference).then(snapshot => {
+            if (watchers.get(key) === entry && entry.sequence === sequence) entry.callback(snapshot);
+          }).catch(entry.onError);
         }
       });
-    }
+    },
+    stop() { clearInterval(this.pollTimer); }
   };
   channel.on('postgres_changes', {
     event: '*', schema: 'public', table: 'kp_tree_revisions', filter: `branch=eq.${branch}`
-  }, () => existing.refresh()).subscribe();
+  }, payload => {
+    const revision = Number(payload?.new?.revision);
+    if (Number.isFinite(revision)) seenRevision = revision;
+    existing.refresh();
+  }).subscribe();
   rootChannels.set(branch, existing);
+  // Realtime can disconnect without a visible error on mobile networks. A
+  // small revision check keeps conversations and worker order lists current
+  // without downloading their full trees on every timer tick.
+  if (['chat','dms','orders','deliveryCustomOrders'].includes(branch)) {
+    existing.pollTimer = setInterval(async () => {
+      if (existing.count === 0 || globalThis.document?.visibilityState === 'hidden' || checkingRevision) return;
+      checkingRevision = true;
+      try {
+        const {data,error} = await supabase.from('kp_tree_revisions')
+          .select('revision').eq('branch',branch).maybeSingle();
+        if (error) throw error;
+        const revision = Number(data?.revision ?? 0);
+        if (seenRevision === null || revision !== seenRevision) existing.refresh();
+        seenRevision = revision;
+      } catch (error) {
+        // The authenticated tree read remains the fallback if revision access
+        // is unavailable; the caller's error handler reports a failed read.
+        existing.refresh();
+      } finally { checkingRevision = false; }
+    }, 4000);
+  }
   return existing;
 }
 function onValue(reference, callback, onError = console.error) {
@@ -228,12 +259,16 @@ function onValue(reference, callback, onError = console.error) {
   const branch = branchOf(reference.path);
   const root = channelFor(branch);
   root.count++;
-  watchers.set(key, { reference, callback, onError });
-  get(reference).then(s => { if (watchers.has(key)) callback(s); }).catch(onError);
+  const entry = { reference, callback, onError, sequence: 1 };
+  watchers.set(key, entry);
+  get(reference).then(snapshot => {
+    if (watchers.get(key) === entry && entry.sequence === 1) callback(snapshot);
+  }).catch(onError);
   return () => {
     watchers.delete(key);
     root.count--;
     if (root.count <= 0) {
+      root.stop();
       supabase.removeChannel(root.channel);
       rootChannels.delete(branch);
     }
@@ -245,6 +280,7 @@ function off(reference, _type, callback) {
       watchers.delete(id);
       const root = rootChannels.get(branchOf(reference.path));
       if (root && --root.count <= 0) {
+        root.stop();
         supabase.removeChannel(root.channel);
         rootChannels.delete(branchOf(reference.path));
       }

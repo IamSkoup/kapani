@@ -55,5 +55,6 @@ console.log('OK: v18 business, delivery, notification and mobile regression cont
 const pack=read('assets/kapani-pack-classic.js');
 check('courier can open destination on a map',main.includes("showCustomDeliveryPoint('${jsEsc(o.id)}')") && main.includes('order.destLat') && main.includes('order.destLng') && main.includes('L.marker([lat,lng])'));
 check('marketplace no longer publishes building rentals',!pack.includes('publishRentListing') && !pack.includes('rentListingForm') && !pack.includes('marketRentBlock'));
-check('mayor closes accounts through a protected RPC',main.includes("supabase.rpc('kp_mayor_close_account'") && !main.includes('await remove(userRef(nick))'));
-check('police requests use protected civic and closure RPCs',pack.includes("p_action:'submit',p_kind:'police'") && pack.includes('kp_mayor_review_close_request') && !pack.includes('set(policeReqRef(id)'));
+check('mayor deletes accounts through a protected RPC',main.includes("supabase.rpc('kp_mayor_delete_account'") && !main.includes('await remove(userRef(nick))'));
+check('police requests use protected civic and deletion RPCs',pack.includes("p_action:'submit',p_kind:'police'") && pack.includes('kp_mayor_review_delete_request') && !pack.includes('set(policeReqRef(id)'));
+check('deletion request is never submitted as a freeze',main.includes("rpc('kp_police_request_delete_v26'") && pack.includes("rpc('kp_police_request_delete_v26'") && !main.includes("type:qs('polType')?.value==='delete'?'freeze'") && !pack.includes("type:type==='delete'?'freeze'"));

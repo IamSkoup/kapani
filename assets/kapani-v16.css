@@ -110,3 +110,23 @@ html[data-season] .chat-msg .chat-bubble[class*="chat-bubble-"]::before { animat
   #casino *,#kpV8Sheet .v8-game-stage * { animation-duration:0s !important; filter:none !important; will-change:auto !important; }
   #casino .v8-game-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+/* Give the conversation the space left after the header and composer. */
+html:has(#messages.section.active) #mainApp.page-wrap {
+  box-sizing:border-box;
+  padding-top:calc(82px + env(safe-area-inset-top,0px));
+}
+#messages.section.active::before { display:none !important; }
+#messages #msgPanel0 > .card > div:has(> .jump-date-text),
+#messages #dmChatView > .card > div:has(> .jump-date-text) {
+  margin:5px 0 !important;
+}
+#messages:has(#dmChatView[style*="display: block"]) .msg-tabs { display:none; }
+#messages #dmChatView .dm-back { margin-bottom:5px; }
+#messages #dmChatView .dm-header-row { padding-bottom:6px; margin-bottom:6px; }
+@media (max-width:1079px) {
+  html:has(#messages.section.active) #mainApp.page-wrap {
+    padding-top:calc(68px + env(safe-area-inset-top,0px));
+    padding-bottom:calc(78px + env(safe-area-inset-bottom,0px));
+  }
+}
