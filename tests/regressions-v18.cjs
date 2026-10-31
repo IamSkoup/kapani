@@ -14,7 +14,7 @@ const migration=read('supabase/022_business_inbox_and_delivery_cart.sql');
 const check=(label,condition)=>assert.ok(condition,label);
 check('new styles loaded after legacy styles',html.includes('assets/kapani-v18-business.css?v=18') &&
   html.indexOf('assets/kapani-v18-business.css')>html.indexOf('assets/kapani-v14-fixes.css'));
-check('new JS is cache-busted',html.includes('kapani-main-classic.js?v=19') && html.includes('kapani-finishes.js?v=18'));
+check('new JS is cache-busted',html.includes('kapani-main-classic.js?v=20') && html.includes('kapani-finishes.js?v=18'));
 
 check('user can remove a final item from business basket',main.includes('if(nextQty <= 0) delete cart[prodId]'));
 check('zero quantity does not clamp to one',main.includes('Math.max(0, Math.min(100, parseInt(value,10)||0))'));
@@ -55,3 +55,5 @@ console.log('OK: v18 business, delivery, notification and mobile regression cont
 const pack=read('assets/kapani-pack-classic.js');
 check('courier can open destination on a map',main.includes("showCustomDeliveryPoint('${jsEsc(o.id)}')") && main.includes('order.destLat') && main.includes('order.destLng') && main.includes('L.marker([lat,lng])'));
 check('marketplace no longer publishes building rentals',!pack.includes('publishRentListing') && !pack.includes('rentListingForm') && !pack.includes('marketRentBlock'));
+check('mayor closes accounts through a protected RPC',main.includes("supabase.rpc('kp_mayor_close_account'") && !main.includes('await remove(userRef(nick))'));
+check('police requests use protected civic and closure RPCs',pack.includes("p_action:'submit',p_kind:'police'") && pack.includes('kp_mayor_review_close_request') && !pack.includes('set(policeReqRef(id)'));

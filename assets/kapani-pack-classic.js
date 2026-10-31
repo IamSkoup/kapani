@@ -441,11 +441,11 @@ ready(function(){
     card.style.cssText = 'border-color:rgba(59,130,246,.3);background:rgba(59,130,246,.04);display:none;';
     card.innerHTML = `
       <div class="card-title" style="color:#60a5fa;">👮 Полицейский — запросы в мэрию</div>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:10px;">Создайте запрос мэру: на штраф или удаление аккаунта.</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:10px;">Создайте запрос мэру: на штраф или закрытие аккаунта.</div>
       <input type="text" id="polTarget" placeholder="Ник нарушителя" maxlength="40">
       <select id="polType">
         <option value="fine">💸 Штраф</option>
-        <option value="delete">🗑 Удаление аккаунта</option>
+        <option value="delete">🚫 Закрытие аккаунта</option>
       </select>
       <input type="number" id="polAmount" placeholder="Сумма штрафа (₽)" min="1" step="1">
       <textarea id="polReason" placeholder="Причина (обязательно)" style="min-height:60px;"></textarea>
@@ -469,7 +469,7 @@ ready(function(){
       const st = r.status==='approved'?'✅ Одобрено':r.status==='rejected'?'❌ Отклонено':'⏳ Ожидает';
       const col = r.status==='approved'?'#22c55e':r.status==='rejected'?'var(--red)':'var(--gold)';
       return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px;margin-bottom:6px;font-size:12px;">
-        <b>${r.type==='fine'?'💸 Штраф':'🗑 Удаление'}</b> · ${escHtml(r.target)}${r.amount?' · '+r.amount+'₽':''}
+        <b>${r.type==='fine'?'💸 Штраф':'🚫 Закрытие'}</b> · ${escHtml(r.target)}${r.amount?' · '+r.amount+'₽':''}
         <div style="color:var(--muted);margin-top:4px;">${escHtml(r.reason||'')}</div>
         <div style="color:${col};font-weight:800;margin-top:4px;">${st}</div>
       </div>`;
@@ -484,9 +484,12 @@ ready(function(){
     if(!target || !reason) return toast('⚠️ Заполните ник и причину','gold');
     if(type==='fine' && amount<=0) return toast('⚠️ Укажите сумму штрафа','gold');
     const tsnap = await get(userRef(target)); if(!tsnap.exists()) return toast('❌ Жителя нет','red');
-    const id = 'pr_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
-    await set(policeReqRef(id), { id, officer: window.currentNick, target, type, amount, reason, status:'pending', createdAt: Date.now() });
-    await pushNotification(ADMIN, `👮 Новый запрос от полиции (${window.currentNick}) на ${target}`,'system');
+    const id = crypto.randomUUID();
+    const {error}=await window.kapaniSupabase.rpc('kp_civic_v8',{
+      p_action:'submit',p_kind:'police',p_id:id,
+      p_data:{target,type:type==='delete'?'freeze':'fine',amount,reason}
+    });
+    if(error)throw error;
     toast('📤 Запрос отправлен в мэрию','green');
     qs('polTarget').value=''; qs('polAmount').value=''; qs('polReason').value='';
     renderMyPoliceReqs();
@@ -498,7 +501,7 @@ ready(function(){
     if(!pending.length){ el.innerHTML='<div style="color:var(--muted);font-size:13px;">Нет запросов</div>'; return; }
     el.innerHTML = pending.map(r=>`
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-bottom:8px;">
-        <div style="font-size:13px;"><b>${r.type==='fine'?'💸 Штраф':'🗑 Удаление'}</b> · от <b>${escHtml(r.officer)}</b> на <b>${escHtml(r.target)}</b>${r.amount?' · '+r.amount+'₽':''}</div>
+        <div style="font-size:13px;"><b>${r.type==='fine'?'💸 Штраф':'🚫 Закрытие'}</b> · от <b>${escHtml(r.officer)}</b> на <b>${escHtml(r.target)}</b>${r.amount?' · '+r.amount+'₽':''}</div>
         <div style="font-size:12px;color:var(--muted);margin:6px 0;">${escHtml(r.reason||'')}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-primary btn-sm" onclick="approvePoliceRequest('${jsEsc(r.id)}')">✅ Одобрить</button>
@@ -509,30 +512,30 @@ ready(function(){
 
   window.approvePoliceRequest = async function(id){
     if(window.currentNick !== ADMIN) return;
-    const snap = await get(policeReqRef(id)); if(!snap.exists()) return;
-    const r = snap.val();
-    if(r.type === 'fine'){
-      const tsnap = await get(userRef(r.target)); if(!tsnap.exists()) return toast('❌ Нет жителя','red');
-      const u = tsnap.val();
-      await update(userRef(r.target), { balance: (u.balance||0) - r.amount });
-      await window.addMunicipalTreasury?.(r.amount, `Штраф от полиции: ${r.reason||''}`, {sourceNick:r.target,sourceType:'fine'});
-      if(typeof window.logTx === 'function') await window.logTx(r.target, { type:'out', who:'Мэрия (полиция)', amt:r.amount, desc:'Штраф: '+(r.reason||'') });
-      await pushNotification(r.target, `💸 Штраф от мэрии: ${r.amount}₽ — ${r.reason||''}`,'money');
-    } else if(r.type === 'delete'){
-      if(!confirm(`Удалить аккаунт ${r.target}?`)) return;
-      await remove(userRef(r.target));
-    }
-    await update(policeReqRef(id), { status:'approved', reviewedAt: Date.now() });
-    await pushNotification(r.officer, `✅ Ваш запрос на ${r.target} одобрен`,'system');
-    toast('✅ Одобрено','green');
+    try{
+      const snap=await get(policeReqRef(id));if(!snap.exists())throw new Error('Запрос не найден');
+      const r=snap.val();
+      if(!confirm(`${r.type==='fine'?'Одобрить штраф':'Закрыть аккаунт'} ${r.target}?`))return;
+      const name=r.type==='fine'?'kp_civic_v8':'kp_mayor_review_close_request';
+      const params=r.type==='fine'
+        ? {p_action:'approve',p_kind:'police',p_id:id}
+        : {p_id:id};
+      const {error}=await window.kapaniSupabase.rpc(name,params);
+      if(error)throw error;
+      toast('✅ Одобрено','green');
+      await renderAdminPoliceReqs((await get(policeReqRef())).val()||{});
+    }catch(error){toast('❌ Одобрение не выполнено: '+(error.message||error),'red');}
   };
   window.rejectPoliceRequest = async function(id){
-    if(window.currentNick !== ADMIN) return;
-    const snap = await get(policeReqRef(id)); if(!snap.exists()) return;
-    const r = snap.val();
-    await update(policeReqRef(id), { status:'rejected', reviewedAt: Date.now() });
-    await pushNotification(r.officer, `❌ Ваш запрос на ${r.target} отклонён`,'system');
-    toast('❌ Отклонено','gold');
+    if(window.currentNick !== ADMIN)return;
+    try{
+      const {error}=await window.kapaniSupabase.rpc('kp_civic_v8',{
+        p_action:'reject',p_kind:'police',p_id:id
+      });
+      if(error)throw error;
+      toast('❌ Отклонено','gold');
+      await renderAdminPoliceReqs((await get(policeReqRef())).val()||{});
+    }catch(error){toast('❌ Отклонение не выполнено: '+(error.message||error),'red');}
   };
 
   // ═══════════════════════════════════════════

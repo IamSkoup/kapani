@@ -6367,8 +6367,8 @@ function marketCard(l,isMine, isArchived=false){
             ${pendingSellerConfirm&&!isArchived?`<div style="color:var(--gold);font-size:13px;font-weight:800;padding:6px 0;width:100%;display:flex;align-items:center;gap:6px;">🤝 Хочет ${isService?'заказать':'купить'}: <span style="color:var(--text);background:var(--gold-dim);border:1px solid rgba(255,128,106,.3);border-radius:8px;padding:2px 10px;">${escHtml(l.buyer||'')}</span></div><button class="btn btn-primary btn-sm" onclick="confirmMeeting('${l.id}')">✅ Подтвердить</button><button class="btn btn-red btn-sm" onclick="declineListing('${l.id}')">❌ Отказать</button>`:''}
             ${pendingBuyerConfirm&&!isArchived?`<button class="btn btn-primary btn-sm" onclick="confirmPurchase('${l.id}')">✅ ${isService?'Подтвердить заказ':'Оплатить и подтвердить'}</button><button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="cancelMeeting('${l.id}')">✕ Отказаться</button>`:''}
             ${showChat?`<button class="btn btn-ghost btn-sm" onclick="goToChat('${escHtml(chatPartner)}')">💬 Написать</button>`:''}
-            ${isMine&&!isArchived?`<button class="btn btn-ghost btn-sm" onclick="pinListing('${l.id}')">${(()=>{const me=allUsersCache[currentNick]||{};const mePrime=me.subscription==='prime'&&me.subscriptionExpiry&&new Date(me.subscriptionExpiry)>new Date();return mePrime?`🔥 ${isListingPinned(l)?'Закреплено':'ХИТ ПРОДАЖ!'} (бесплатно)`:`📌 ${isListingPinned(l)?'Закреплено':'Лидер продаж!'} (${ECONOMY_MARKET_PIN_PRICE}₽)`;})()}</button><button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="archiveListing('${l.id}')">🕓 Скрыть</button><button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="deleteListing('${l.id}')">🗑 Удалить</button>`:''}
-            ${isMine&&isArchived?`<button class="btn btn-primary btn-sm" onclick="restoreListing('${l.id}')">↩ Вернуть</button><button class="btn btn-red btn-sm" onclick="deleteListing('${l.id}')">🗑 Удалить</button>`:''}
+            ${isMine&&!isArchived?`<button class="btn btn-ghost btn-sm" onclick="pinListing('${l.id}')">${(()=>{const me=allUsersCache[currentNick]||{};const mePrime=me.subscription==='prime'&&me.subscriptionExpiry&&new Date(me.subscriptionExpiry)>new Date();return mePrime?`🔥 ${isListingPinned(l)?'Закреплено':'ХИТ ПРОДАЖ!'} (бесплатно)`:`📌 ${isListingPinned(l)?'Закреплено':'Лидер продаж!'} (${ECONOMY_MARKET_PIN_PRICE}₽)`;})()}</button><button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="archiveListing('${l.id}')">🕓 Скрыть</button><button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="deleteListing('${l.id}')">🚫 Закрыть</button>`:''}
+            ${isMine&&isArchived?`<button class="btn btn-primary btn-sm" onclick="restoreListing('${l.id}')">↩ Вернуть</button><button class="btn btn-red btn-sm" onclick="deleteListing('${l.id}')">🚫 Закрыть</button>`:''}
         </div></div>`;
 }
 window.publishListing=async function(){
@@ -7375,13 +7375,17 @@ window.adminVerifyAccount=async function(nick){
     }
 };
 window.adminDeleteAccount=async function(nick){
-    if(!confirm(`Удалить аккаунт ${nick}? Это действие необратимо!`))return;
-    await remove(userRef(nick));
-    if(allUsersCache) delete allUsersCache[nick];
-    allUsersCacheLoaded=true;
-    renderHomeStats_users(allUsersCache);
-    toast(`🗑 Аккаунт ${nick} удалён`,'red');
-    renderUnverifiedAccounts();
+    if(!confirm(`Закрыть аккаунт ${nick}? Вход будет заблокирован, профиль скрыт, финансовая история сохранена.`))return;
+    try{
+        const {data,error}=await supabase.rpc('kp_mayor_close_account',{p_target:nick});
+        if(error)throw error;
+        if(!data?.ok)throw new Error('Сервер не подтвердил закрытие');
+        if(allUsersCache)delete allUsersCache[nick];
+        allUsersCacheLoaded=true;
+        renderHomeStats_users(allUsersCache);
+        toast(`Аккаунт ${nick} закрыт`,'green');
+        await renderUnverifiedAccounts();
+    }catch(error){toast('Закрытие не выполнено: '+(error.message||error),'red');}
 };
 window.renderUnverifiedAccounts=async function(){
     const el=qs('unverifiedAccounts');if(!el)return;
@@ -7402,7 +7406,7 @@ window.renderUnverifiedAccounts=async function(){
                 </div>
                 <div style="display:flex;gap:8px;">
                     <button class="btn btn-primary btn-sm" onclick="adminVerifyAccount('${escHtml(nick)}')">✅ Подтвердить</button>
-                    <button class="btn btn-red btn-sm" onclick="adminDeleteAccount('${escHtml(nick)}')">🗑 Удалить</button>
+                    <button class="btn btn-red btn-sm" onclick="adminDeleteAccount('${escHtml(nick)}')">🚫 Закрыть</button>
                 </div>
             </div>
         </div>
@@ -11693,7 +11697,7 @@ window.renderAdminRaces = async function(){
       <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${RACE_TYPE_LABELS[r.type]||r.type}${r.laps?` · ${r.laps} кр.`:''}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn btn-ghost btn-sm" onclick="openRaceFormModal('${jsEsc(r.id)}')">✏️ Редактировать</button>
-        <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red-dim);" onclick="deleteRace('${jsEsc(r.id)}')">🗑 Удалить</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red-dim);" onclick="deleteRace('${jsEsc(r.id)}')">🚫 Закрыть</button>
       </div>
     </div>`).join('');
 };
@@ -11799,7 +11803,7 @@ window.renderAdminDayGroups = async function() {
       <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${raceNames.length ? raceNames.map(n=>`🏁 ${escHtml(n)}`).join(' · ') : 'Гонок нет'}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn btn-ghost btn-sm" style="border-color:rgba(255,128,106,.35);color:var(--gold);" onclick="openDayGroupFormModal('${jsEsc(g.key)}')">✏️ Редактировать</button>
-        <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red-dim);" onclick="deleteDayGroup('${jsEsc(g.key)}')">🗑 Удалить</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red-dim);" onclick="deleteDayGroup('${jsEsc(g.key)}')">🚫 Закрыть</button>
       </div>
     </div>`;
   }).join('');
