@@ -34,6 +34,6 @@ assert.doesNotMatch(boot,/localStorage\.removeItem\('kp_s'\)/,'bootstrap must no
 assert.match(boot,/withKapaniAuthRetry\(/);
 assert.match(boot,/if\(!appStarted && currentNick===expectedNick\)/);
 assert.match(html,/supabase-bridge-classic\.js\?v=17/);
-assert.match(html,/kapani-main-classic\.js\?v=18/);
+assert.match(html,/kapani-main-classic\.js\?v=19/);
 
 console.log('OK: v17 secure resignation and persistent session regression contracts.');

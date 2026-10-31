@@ -65,7 +65,7 @@ test('licences and rental SQL last', sql.includes('014_rentals_and_access.sql'))
 test('revision 15 css loaded after v10 overrides', index.includes('assets/kapani-v10.css?v=13') &&
   index.includes('assets/kapani-v14-fixes.css?v=15') &&
   index.indexOf('assets/kapani-v10.css')<index.indexOf('assets/kapani-v14-fixes.css'));
-test('revision 18 main script cache buster', index.includes('assets/kapani-main-classic.js?v=18'));
+test('revision 18 main script cache buster', index.includes('assets/kapani-main-classic.js?v=19'));
 test('revision 10 SQL appended to full installer', sql.includes('-- ===== 015_subscriptions_and_news.sql ====='));
 test('installer and individual new migration equivalent', sql.includes(subscriptionNews.trim()));
 test('Plus profile frame fix follows subscription migration', sql.includes('-- ===== 016_profile_plus_frames.sql =====') && sql.includes(profileTiers.trim()));

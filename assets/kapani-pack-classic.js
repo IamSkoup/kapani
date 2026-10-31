@@ -63,7 +63,6 @@ ready(function(){
 
   // ── Firebase paths for new features
   const policeReqRef = (id) => ref(db, id ? `policeRequests/${id}` : 'policeRequests');
-  const marketRentRef = (id) => ref(db, id ? `marketRentals/${id}` : 'marketRentals');
   const passportRef = (nick) => ref(db, `users/${nick}/passport`);
   const licenseRef = (nick) => ref(db, `licenses/${nick}`);
 
@@ -537,112 +536,6 @@ ready(function(){
   };
 
   // ═══════════════════════════════════════════
-  // 5) MARKETPLACE: building rentals
-  // ═══════════════════════════════════════════
-  function injectMarketRentUI(){
-    const marketSection = qs('market'); if(!marketSection) return;
-    const ensureRentListener = ()=>{
-      if(window.__kapaniRentListener) return;
-      const rentRef = marketRentRef();
-      const rentFn = snap=>{ if(window._kapaniActivePage === 'market') renderRentListingsOnMarket(snap?.val?.() || {}); };
-      onValue(rentRef, rentFn);
-      window.__kapaniRentListener = {ref:rentRef, fn:rentFn};
-    };
-    // The UI is created once, while the realtime listener is attached only
-    // while the Market page is active. Reopening the page therefore reuses
-    // the DOM and safely reattaches a single listener.
-    if(qs('rentListingForm')){ ensureRentListener(); return; }
-    // Find "create listing" panel (mktPanel2 area) and append a "rent building" sub-form
-    const createPanel = qs('mktPanel2') || marketSection;
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.id = 'rentListingForm';
-    card.style.cssText = 'border-color:rgba(255,128,106,.3);background:rgba(255,128,106,.04);margin-top:14px;';
-    card.innerHTML = `
-      <div class="card-title" style="color:var(--gold);">🏘️ Сдать здание в аренду</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Объявление появится в общем списке маркетплейса.</div>
-      <input type="text" id="rlTitle" placeholder="Название здания" maxlength="80">
-      <input type="number" id="rlPrice" placeholder="Цена аренды (₽/неделю)" min="1" step="1">
-      <input type="text" id="rlAddress" placeholder="Адрес / район" maxlength="120">
-      <textarea id="rlDesc" placeholder="Описание (комнаты, этаж, мебель...)" style="min-height:60px;" maxlength="500"></textarea>
-      <input type="url" id="rlPhoto" placeholder="Фото URL (необязательно)">
-      <button class="btn btn-gold" onclick="publishRentListing()" style="margin-top:6px;">🏘️ Выставить на аренду</button>
-      <div id="myRentListings" style="margin-top:14px;"></div>
-    `;
-    createPanel.appendChild(card);
-    ensureRentListener();
-  }
-
-  window.publishRentListing = async function(){
-    const title = qs('rlTitle')?.value.trim();
-    const price = parseInt(qs('rlPrice')?.value||'0',10)||0;
-    const address = qs('rlAddress')?.value.trim();
-    const desc = qs('rlDesc')?.value.trim();
-    const photo = qs('rlPhoto')?.value.trim();
-    if(!title || !price || !desc) return toast('⚠️ Заполните название, цену, описание','gold');
-    const id = 'rl_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
-    try{
-      const {error}=await window.kapaniSupabase.rpc('kp_rent_listing_action',{
-        p_action:'create',p_listing_id:id,p_payload:{title,price,address,desc,photo}
-      });
-      if(error)throw error;
-    }catch(e){console.error('[rent create]',e);return toast('❌ '+(e?.message||'Ошибка аренды'),'red');}
-    toast('✅ Объявление об аренде опубликовано','green');
-    qs('rlTitle').value=''; qs('rlPrice').value=''; qs('rlAddress').value=''; qs('rlDesc').value=''; qs('rlPhoto').value='';
-    renderRentListingsOnMarket();
-  };
-
-  async function renderRentListingsOnMarket(data){
-    const source = (data && typeof data === 'object') ? data : ((await get(marketRentRef())).val() || {});
-    const all = Object.values(source).filter(r=>r.status==='active').sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-    // Inject above marketListings
-    const host = qs('marketListings'); if(!host) return;
-    let block = qs('marketRentBlock');
-    if(!block){
-      block = document.createElement('div');
-      block.id = 'marketRentBlock';
-      block.style.cssText = 'margin-bottom:14px;';
-      host.parentNode.insertBefore(block, host);
-    }
-    if(!all.length){ block.innerHTML=''; }
-    else block.innerHTML = `
-      <div style="font-weight:900;font-size:14px;margin-bottom:8px;color:var(--gold);">🏘️ Здания в аренду</div>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        ${all.map(r=>`
-          <div style="background:var(--surface);border:1px solid rgba(255,128,106,.25);border-radius:var(--r-sm);padding:12px;">
-            ${r.photo?`<img src="${escHtml(r.photo)}" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px;margin-bottom:8px;" loading="lazy">`:''}
-            <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
-              <div style="min-width:0;flex:1;">
-                <div style="font-weight:900;font-size:14px;">${escHtml(r.title)}</div>
-                ${r.address?`<div style="font-size:12px;color:var(--muted);margin-top:2px;">📍 ${escHtml(r.address)}</div>`:''}
-                <div style="font-size:12px;color:var(--text);margin-top:6px;white-space:pre-wrap;">${escHtml(r.desc)}</div>
-                <div style="font-size:11px;color:var(--muted);margin-top:4px;">Владелец: <b style="color:var(--primary);cursor:pointer;" onclick="openUserProfile('${jsEsc(r.owner)}')">${escHtml(r.owner)}</b></div>
-              </div>
-              <div style="text-align:right;flex-shrink:0;">
-                <div style="font-weight:900;color:var(--gold);">${r.price.toLocaleString()}₽</div>
-                <div style="font-size:10px;color:var(--muted);">в неделю</div>
-              </div>
-            </div>
-            <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
-              <button class="btn btn-primary btn-sm" onclick="goToChat('${jsEsc(r.owner)}')" style="flex:1;min-width:120px;">💬 Написать</button>
-              ${r.owner===window.currentNick?`<button class="btn btn-red btn-sm" onclick="removeRentListing('${jsEsc(r.id)}')">🗑 Снять</button>`:''}
-            </div>
-          </div>`).join('')}
-      </div>
-    `;
-  }
-  window.removeRentListing = async function(id){
-    if(!confirm('Снять объявление?')) return;
-    try{
-      const {error}=await window.kapaniSupabase.rpc('kp_rent_listing_action',{
-        p_action:'delete',p_listing_id:id
-      });
-      if(error)throw error;
-    }catch(e){console.error('[rent delete]',e);return toast('❌ '+(e?.message||'Ошибка аренды'),'red');}
-    renderRentListingsOnMarket();
-  };
-
-  // ═══════════════════════════════════════════
   // INJECTION HOOKS — единая обёртка навигации
   // ═══════════════════════════════════════════
   const _kapaniBaseNavTo = window.navTo;
@@ -652,10 +545,6 @@ ready(function(){
     const previous = _kapaniLastPage;
     _kapaniLastPage = id;
     window._kapaniActivePage = id;
-    if(previous==='market' && id!=='market' && window.__kapaniRentListener){
-      try{ window.dbOff(window.__kapaniRentListener.ref,'value',window.__kapaniRentListener.fn); }catch(e){}
-      window.__kapaniRentListener=null;
-    }
     if(previous==='adminPage' && id!=='adminPage' && window.__kapaniAdminPoliceListener){
       try{ window.dbOff(window.__kapaniAdminPoliceListener.ref,'value',window.__kapaniAdminPoliceListener.fn); }catch(e){}
       window.__kapaniAdminPoliceListener=null;
@@ -676,10 +565,6 @@ ready(function(){
         injectFinePanel();
         refreshPolicePanelVisibility();
         refreshFinePanelVisibility();
-      }
-      if(id==='market'){
-        injectMarketRentUI();
-        renderRentListingsOnMarket();
       }
       if(id==='dutyPage'){
         injectDutyPassportLicenseUI();

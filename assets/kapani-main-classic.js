@@ -4686,7 +4686,11 @@ window.quitJob = async function(){
             const {data:quitResult,error:quitError} = await supabase.rpc('kp_quit_job', {
                 p_employment_id: targetEmp.id
             });
-            if(quitError) throw new Error(quitError.message || 'Не удалось уволиться');
+            if(quitError) throw new Error(
+                (quitError.code === 'PGRST202' || (quitError.code === '404' && /kp_quit_job/i.test(quitError.message || '')))
+                    ? 'На сервере не установлена функция увольнения. Администратору нужно применить миграцию 021_secure_quit_job.sql после 001–020 и обновить схему API.'
+                    : (quitError.message || 'Не удалось уволиться'));
+
 
             // A successful server commit must stay successful even if the next
             // profile fetch encounters a temporary connection failure.
@@ -13548,10 +13552,30 @@ async function renderDeliveryCustomOrders(){
         if(!isMine&&o.status==='waiting'&&['business','marketplace'].includes(o.source)) priceControl=`<div style="margin-top:7px;"><div style="font-size:12px;color:var(--gold);font-weight:900;margin-bottom:5px;">🚚 Цена доставки: ${Number(o.deliveryPrice||deliveryDistancePrice(Number(o.distanceKm||0))||0).toLocaleString()} ₽</div><button class="btn btn-primary btn-sm" onclick="takeCustomDelivery('${o.id}')">🛵 Взять заказ</button></div>`;
         if(!isMine&&o.status==='waiting'&&o.source==='business') priceControl=`<button class="btn btn-primary btn-sm" onclick="takeCustomDelivery('${o.id}')">✅ Взять заказ (${Number(o.deliveryPrice||0).toLocaleString()} ₽)</button>`;
         const mineActions=isMine?`<div style="display:flex;gap:6px;flex-wrap:wrap;">${o.status==='client_confirmed'?`<button class="btn btn-primary btn-sm" onclick="startCustomDelivery('${o.id}')">🛵 Начать доставку</button>`:''}${o.status==='in_progress'?`<button class="btn btn-gold btn-sm" onclick="completeCustomDelivery('${o.id}')">✅ Доставлено</button>`:''}${o.status==='delivered'&&!o.workerConfirmed?`<button class="btn btn-gold btn-sm" onclick="confirmCustomDeliveryDone('${o.id}')">✅ Завершить</button>`:''}</div>`:'';
-        html+=`<div class="work-order" data-delivery-order-id="${escAttr(o.id)}" style="margin-bottom:10px;"><div style="font-weight:900;font-size:14px;">${escHtml(o.sourceLabel||'')} «${escHtml(o.from)}»</div><div style="font-size:12px;color:var(--muted);">📋 ${escHtml(o.items)}</div><div style="font-size:12px;color:var(--muted);">📍 ${escHtml(o.address)}</div>${o.notes?`<div class="delivery-customer-note">Комментарий клиента — ${escHtml(o.notes)}</div>`:''}<div style="font-size:12px;color:var(--muted);">👤 ${escHtml(o.client)}</div>${o.contact?`<div style="font-size:12px;color:var(--muted);">📞 ${escHtml(o.contact)}</div>`:''}${o.distanceKm!=null?`<div style="font-size:12px;color:var(--muted);">📏 ${Number(o.distanceKm).toFixed(2)} км</div>`:''}${o.priceOffer!=null?`<div style="font-size:12px;color:var(--gold);font-weight:900;">💰 ${Number(o.priceOffer).toLocaleString()} ₽</div>`:''}${priceControl}${mineActions}</div>`;
+        html+=`<div class="work-order" data-delivery-order-id="${escAttr(o.id)}" style="margin-bottom:10px;"><div style="font-weight:900;font-size:14px;">${escHtml(o.sourceLabel||'')} «${escHtml(o.from)}»</div><div style="font-size:12px;color:var(--muted);">📋 ${escHtml(o.items)}</div><div style="font-size:12px;color:var(--muted);">📍 ${escHtml(point(o.destLat,o.destLng) && /^\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*$/.test(String(o.address||'')) ? 'Место доставки отмечено на карте' : (o.address||'Адрес не указан'))}</div>${point(o.destLat,o.destLng)?`<button class="btn btn-ghost btn-sm" type="button" onclick="showCustomDeliveryPoint('${jsEsc(o.id)}')">🗺 Показать точку на карте</button><div class="delivery-point-map" data-order-id="${escAttr(o.id)}" style="display:none;height:240px;margin:8px 0;border-radius:12px;overflow:hidden;"></div>`:''}${o.notes?`<div class="delivery-customer-note">Комментарий клиента — ${escHtml(o.notes)}</div>`:''}<div style="font-size:12px;color:var(--muted);">👤 ${escHtml(o.client)}</div>${o.contact?`<div style="font-size:12px;color:var(--muted);">📞 ${escHtml(o.contact)}</div>`:''}${o.distanceKm!=null?`<div style="font-size:12px;color:var(--muted);">📏 ${Number(o.distanceKm).toFixed(2)} км</div>`:''}${o.priceOffer!=null?`<div style="font-size:12px;color:var(--gold);font-weight:900;">💰 ${Number(o.priceOffer).toLocaleString()} ₽</div>`:''}${priceControl}${mineActions}</div>`;
     });
+    host.querySelectorAll(".delivery-point-map").forEach(el=>{try{el._kapaniMap?.remove();}catch(error){console.warn("[delivery map cleanup]",error);}});
     host.innerHTML=html;
 }
+
+window.showCustomDeliveryPoint=async function(orderId){
+    const host=qs('kapaniCustomDeliveryQueue');
+    const mapEl=Array.from(host?.querySelectorAll('.delivery-point-map')||[]).find(el=>el.dataset.orderId===orderId);
+    if(!mapEl)return;
+    if(mapEl._kapaniMap){mapEl._kapaniMap.remove();mapEl._kapaniMap=null;mapEl.style.display='none';return;}
+    try{
+        const order=(await get(deliveryCustomOrderRef(orderId))).val();
+        if(!order||!point(order.destLat,order.destLng))throw new Error('Точка доставки недоступна');
+        await window.kapaniLoadLeaflet();
+        mapEl.style.display='block';
+        const lat=Number(order.destLat),lng=Number(order.destLng);
+        const map=L.map(mapEl).setView([lat,lng],16);
+        mapEl._kapaniMap=map;
+        addSatelliteLayer(map);
+        L.marker([lat,lng]).addTo(map).bindPopup('<b>📍 Место доставки</b>').openPopup();
+        requestAnimationFrame(()=>map.invalidateSize());
+    }catch(error){mapEl.style.display='none';toast('Не удалось открыть карту: '+error.message,'red');}
+};
 
 window.proposeCustomDeliveryPrice=async function(){ return toast('ℹ️ Цена доставки фиксирована: 200 ₽/км','gold'); };
 
