@@ -43,6 +43,18 @@ async function ensureAuth(){
     // A failed network request is not evidence that the user signed out.
     // Preserve the last verified identity and let startup retry the check.
     if(error && !/session missing/i.test(String(error.message))){
+        // Deleted accounts may leave a still-signed JWT in browser storage.
+        // Clear this invalid local session so password login can proceed.
+        const code=String(error.code||'').toLowerCase();
+        const staleUser=code==='user_not_found' ||
+            /user from sub claim in jwt does not exist/i.test(String(error.message||''));
+        if(staleUser){
+            const {error:signOutError}=await supabase.auth.signOut({scope:'local'});
+            if(signOutError) console.debug('[Kapani auth] stale session cleanup:',signOutError.message);
+            kapaniVerifiedIdentity=null;
+            authInstance.currentUser=null;
+            return authInstance;
+        }
         console.debug('[Kapani auth]',error.message);
         throw error;
     }
