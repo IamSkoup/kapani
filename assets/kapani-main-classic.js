@@ -126,14 +126,8 @@ async function establishKapaniServerSession(nick, password, legacyEmail=''){
     const expectedNick = String(nick || '').trim();
     const secret = String(password || '');
     if(!expectedNick || !secret) throw new Error('Для входа нужны имя и пароль');
-    const auth = await ensureAuth();
-    if(auth.currentUser?.uid === expectedNick){
-        const ensured=await supabase.rpc('kp_ensure_my_profile');
-        if(ensured.error) throw new Error('Не удалось восстановить данные аккаунта: '+ensured.error.message);
-        if(auth.currentUser.email?.toLowerCase()!==String(await authEmail(expectedNick)).toLowerCase())
-            kapaniLegacyLoginEmail=String(auth.currentUser.email||'').toLowerCase();
-        return auth.currentUser;
-    }
+    // A password login must not depend on an old cached JWT. Signing in
+    // first replaces a stale deleted-user session with the new identity.
     if(kapaniSessionEstablishPromise && kapaniSessionEstablishNick===expectedNick) return kapaniSessionEstablishPromise;
     kapaniSessionEstablishNick=expectedNick;
     kapaniSessionEstablishPromise=(async()=>{
@@ -164,7 +158,7 @@ async function establishKapaniServerSession(nick, password, legacyEmail=''){
         if(error || !data?.session) throw new Error('Неверный ник или пароль');
         const serverProfile=await supabase.from('kp_profiles').select('nickname').eq('user_id',data.user.id).maybeSingle();
         if(serverProfile.error || serverProfile.data?.nickname!==expectedNick){
-            await supabase.auth.signOut();
+            await supabase.auth.signOut({scope:'local'});
             throw new Error('Имя в защищённом профиле не совпадает');
         }
         // Some migrated accounts have Auth + kp_profiles + wallet, but no JSON
@@ -173,8 +167,10 @@ async function establishKapaniServerSession(nick, password, legacyEmail=''){
         if(ensured.error) throw new Error('Не удалось восстановить данные аккаунта: '+ensured.error.message);
         kapaniLegacyLoginEmail=normalizedEmail || (data.user.email?.toLowerCase()!==String(await authEmail(expectedNick)).toLowerCase()
             ? String(data.user.email||'').toLowerCase() : '');
-        auth.currentUser={uid:expectedNick,id:data.user.id,email:data.user.email};
-        return auth.currentUser;
+        if(!authInstance) authInstance={currentUser:null};
+        authInstance.currentUser={uid:expectedNick,id:data.user.id,email:data.user.email};
+        kapaniVerifiedIdentity={id:data.user.id,nick:expectedNick};
+        return authInstance.currentUser;
     })();
     try{return await kapaniSessionEstablishPromise;}
     finally{kapaniSessionEstablishPromise=null;kapaniSessionEstablishNick=null;}
