@@ -9,6 +9,7 @@ const main = read('assets/kapani-main-classic.js');
 const extra = read('assets/kapani-finishes.js');
 const index = read('index.html');
 const css = read('assets/kapani-v10.css');
+const tourCss = read('assets/kapani-onboarding.css');
 const subscriptionNews = read('supabase/015_subscriptions_and_news.sql');
 const profileTiers = read('supabase/016_profile_plus_frames.sql');
 const dmAndEducation = read('supabase/017_dm_previews_and_education_close.sql');
@@ -65,7 +66,8 @@ test('licences and rental SQL last', sql.includes('014_rentals_and_access.sql'))
 test('revision 15 css loaded after v10 overrides', index.includes('assets/kapani-v10.css?v=13') &&
   index.includes('assets/kapani-v14-fixes.css?v=15') &&
   index.indexOf('assets/kapani-v10.css')<index.indexOf('assets/kapani-v14-fixes.css'));
-test('revision 18 main script cache buster', index.includes('assets/kapani-main-classic.js?v=21'));
+test('main script cache buster stays at revision 21 or later',
+  Number(index.match(/assets\/kapani-main-classic\.js\?v=(\d+)/)?.[1]||0)>=21);
 test('revision 10 SQL appended to full installer', sql.includes('-- ===== 015_subscriptions_and_news.sql ====='));
 test('installer and individual new migration equivalent', sql.includes(subscriptionNews.trim()));
 test('Plus profile frame fix follows subscription migration', sql.includes('-- ===== 016_profile_plus_frames.sql =====') && sql.includes(profileTiers.trim()));
@@ -119,7 +121,7 @@ test('hospital service buttons are explicit', main.includes("'Включить':
 test('casino wallet requires successful backend operation', main.includes("const result=await rpc('kp_casino_v8'") && main.includes('Сервер не подтвердил изменение игрового баланса'));
 test('desktop sheets center in viewport', css.includes('#kpV8Sheet.v8-overlay') && css.includes('justify-content:center!important') && css.includes('align-items:center!important'));
 test('casino overlay ignores the global 640px max-width', css.includes('width:100vw!important;max-width:none!important;') && css.includes('min-width:100vw!important;height:100dvh!important;'));
-test('push prompt has green gradient, never old red', main.includes('background:linear-gradient(145deg,#1d4a33') && !main.includes('max-width:490px;background:#170b10'));
+test('push prompt has green gradient, never old red', (main.includes('background:linear-gradient(145deg,#1d4a33') || tourCss.includes('background: linear-gradient(145deg, #19432f')) && !main.includes('max-width:490px;background:#170b10'));
 test('chat signatures cleared on navigation', main.includes("chatHost.removeAttribute('data-sig')") && main.includes("host.removeAttribute('data-sig')"));
 test('chat render has failure recovery', main.includes("console.error('[Kapani general chat render]',err)") && main.includes('_chatRenderPending = false;'));
 test('DM opening no longer blocks on presence update', main.includes("Promise.resolve(set(ref(db,`presence/${currentNick}/dmOpenWith`),nick))"));

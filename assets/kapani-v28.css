@@ -1,0 +1,29 @@
+/* Revision 28: accessible bank feedback and predictable controls. */
+.kp-savings-explain {
+  margin: 12px 0;
+  color: var(--muted, #bdcfc3);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.kp-savings-status {
+  min-height: 1.5em;
+  margin: 10px 0 0;
+  color: var(--text, #e9fff0);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+[data-kp-savings-action]:disabled {
+  cursor: wait;
+  opacity: .58;
+  filter: saturate(.7);
+}
+@media (max-width: 430px) {
+  #bank .card { min-width: 0; }
+  #bank .kp-savings-summary { min-width: 0; }
+  #bank .kp-savings-balance, #bank .kp-savings-rate { min-width: 0; overflow-wrap: anywhere; }
+  #savingsBalanceDisplay { font-size: clamp(20px, 6vw, 26px) !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-kp-savings-action] { transition: none !important; }
+}

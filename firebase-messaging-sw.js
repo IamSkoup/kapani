@@ -1,8 +1,28 @@
 /* Kapani Web Push Service Worker.
  * One Service Worker only: receives standard Web Push and renders system notifications.
  */
-const SW_VERSION = 'kapani-webpush-2026-09-30-v4';
+const SW_VERSION = 'kapani-pwa-2026-11-07-v29';
 const KAPANI_APP_PATH = '/kapani/';
+const KAPANI_STATIC_CACHE = 'kapani-static-v29';
+const KAPANI_STATIC_PREFIX = 'kapani-static-';
+const KAPANI_APP_SHELL = [
+  './', './index.html', './config.js', './manifest.json',
+  './assets/icon-192.png', './assets/icon-512.png',
+  './assets/kapani-main-classic.js?v=29',
+  './assets/supabase-bridge-classic.js?v=17&rev=27',
+  './assets/kapani-v28.css?v=28',
+  './assets/kapani-onboarding.js?v=29',
+  './assets/kapani-onboarding.css?v=29'
+];
+
+function isPublicStaticRequest(request) {
+  if (request.method !== 'GET') return false;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || !url.pathname.startsWith(KAPANI_APP_PATH)) return false;
+  // Never intercept Supabase, auth, Storage or cross-origin API requests.
+  return request.mode === 'navigate' || /\.(?:html|js|css|webp|png|svg|json)$/i.test(url.pathname)
+    || url.pathname === KAPANI_APP_PATH;
+}
 
 function resolveNotificationUrl(requestedUrl) {
   try {
@@ -61,8 +81,46 @@ function isKapaniUrl(url) {
   } catch (_) { return false; }
 }
 
-self.addEventListener('install', event => { event.waitUntil(self.skipWaiting()); });
-self.addEventListener('activate', event => { event.waitUntil(self.clients.claim()); });
+self.addEventListener('install', event => {
+  event.waitUntil((async () => {
+    const cache = await caches.open(KAPANI_STATIC_CACHE);
+    await Promise.allSettled(KAPANI_APP_SHELL.map(async path => {
+      const request = new Request(new URL(path, self.registration.scope), {cache:'reload'});
+      const response = await fetch(request);
+      if (response.ok && response.type === 'basic') await cache.put(request, response);
+    }));
+    await self.skipWaiting();
+  })());
+});
+self.addEventListener('activate', event => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(key => key.startsWith(KAPANI_STATIC_PREFIX) && key !== KAPANI_STATIC_CACHE)
+      .map(key => caches.delete(key)));
+    await self.clients.claim();
+  })());
+});
+self.addEventListener('fetch', event => {
+  if (!isPublicStaticRequest(event.request)) return;
+  event.respondWith((async () => {
+    try {
+      const response = await fetch(event.request);
+      if (response.ok && response.type === 'basic') {
+        const cache = await caches.open(KAPANI_STATIC_CACHE);
+        await cache.put(event.request, response.clone());
+      }
+      return response;
+    } catch (error) {
+      const cached = await caches.match(event.request);
+      if (cached) return cached;
+      if (event.request.mode === 'navigate') {
+        const fallback = await caches.match(new URL('./', self.registration.scope).href);
+        if (fallback) return fallback;
+      }
+      throw error;
+    }
+  })());
+});
 
 /* Foreground helper: the page may explicitly ask the same SW to display a
  * system notification, so there is no second display implementation. */

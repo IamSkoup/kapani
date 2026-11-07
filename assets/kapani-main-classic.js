@@ -1663,6 +1663,9 @@ window.handleAuth = async function() {
                 rewardedAvatar: false,
                 rewardedWall: false,
                 createdAt: now,
+                // The registration worker may sanitize profile fields. The
+                // same flag is persisted after the Supabase session is ready.
+                settings: { firstVisitTour: { version: 1, completed: false } },
                 economyLastProcessedAt: now,
                 savingsBalance: 0,
                 savingsLastInterestAt: now,
@@ -1685,6 +1688,13 @@ window.handleAuth = async function() {
             });
             const registration=await registered.json().catch(()=>({}));
             if(!registered.ok || !registration.ok) throw new Error(registration.error||'Не удалось создать аккаунт');
+            // This account is new even if its nickname belonged to a deleted
+            // account before a test database reset.
+            try {
+                localStorage.removeItem(`kp_first_visit_done_${nick}`);
+                localStorage.removeItem(`kp_first_push_prompt_${nick}`);
+                localStorage.setItem(`kp_first_visit_pending_${nick}`, '1');
+            } catch (_) {}
             await establishKapaniServerSession(nick,password);
             // Referral metadata is stored on the newly-created user's own record.
             // This preserves the existing Firebase user-write boundary; the advertiser's
@@ -1701,6 +1711,20 @@ window.handleAuth = async function() {
             _kapaniSessionPassword = password;
             syncCurrentNick();
             await ensureAuth();
+            try {
+                // kp_tree_bootstrap_user strips extra signup fields, so write
+                // the first-visit marker through the owner-only settings RPC.
+                await update(userRef(nick), {settings:{
+                    ...(createdUser.settings || {}),
+                    firstVisitTour:{version:1,completed:false}
+                }});
+                allUsersCache[nick].settings = {
+                    ...(createdUser.settings || {}), firstVisitTour:{version:1,completed:false}
+                };
+            } catch (error) {
+                // Local pending marker still guarantees the tour on this device.
+                console.warn('[Kapani onboarding] pending flag could not be synced:',error);
+            }
             if(advertiserReferrer){
                 try {
                     await pushNotification(advertiserReferrer.nick, `📢 Новый приглашённый: ${nameInput} зарегистрировался по вашей рекомендации`, 'system');
@@ -1730,6 +1754,42 @@ window.handleAuth = async function() {
         toast('❌ Ошибка: ' + e.message, 'red');
     }
 };
+
+function needsFirstVisitTour(profile) {
+    if (!currentNick) return false;
+    const doneKey = `kp_first_visit_done_${currentNick}`;
+    const pendingKey = `kp_first_visit_pending_${currentNick}`;
+    try { if (localStorage.getItem(doneKey) === '1') return false; } catch (_) {}
+    const serverState = profile?.settings?.firstVisitTour;
+    if (serverState?.completed === true) return false;
+    if (serverState?.version === 1 && serverState.completed === false) return true;
+    try { return localStorage.getItem(pendingKey) === '1'; } catch (_) { return false; }
+}
+
+function finishFirstVisitTour(nick) {
+    if (!nick) return;
+    try {
+        localStorage.setItem(`kp_first_visit_done_${nick}`, '1');
+        localStorage.removeItem(`kp_first_visit_pending_${nick}`);
+    } catch (_) {}
+    // Save across devices without expanding the profile patch allowlist.
+    // The settings object is already owner-editable through kp_profile_patch.
+    void (async () => {
+        try {
+            const fresh = (await get(userRef(nick))).val() || {};
+            const settings = {
+                ...(fresh.settings || {}),
+                firstVisitTour: { version: 1, completed: true, completedAt: Date.now() }
+            };
+            await update(userRef(nick), { settings });
+            if (currentNick === nick && allUsersCache[nick]) allUsersCache[nick].settings = settings;
+        } catch (error) {
+            console.warn('[Kapani onboarding] profile completion could not be synced:', error);
+        }
+    })();
+    // This fires only after the tour has fully closed, including when skipped.
+    if (currentNick === nick) setTimeout(() => showFirstPushPrompt(), 420);
+}
 
 function startApp() {
     if(appStarted){
@@ -1774,13 +1834,27 @@ function startApp() {
     ]);
     Promise.resolve()
       .then(()=>criticalProfileLoad)
-      .then(()=>{
+      .then(profileSnapshot=>{
+          const firstVisit = needsFirstVisitTour(profileSnapshot?.val?.() || null);
           try{ revealApp(); }catch(e){ console.error('[Kapani] Failed to reveal app shell:',e); if(header) header.style.display='flex'; if(bottom) bottom.style.display='flex'; if(main) main.style.display='block'; }
           if(loStatus) loStatus.textContent='Готово!';
           if(loBar) loBar.style.cssText='width:100%;transition:width .2s ease;';
           hideLoadingSafe();
           handleKapaniPushDeepLink();
-          setTimeout(()=>showFirstPushPrompt(), 600);
+          if (firstVisit && typeof window.kapaniOnboardingStart === 'function') {
+              const tourNick = currentNick;
+              setTimeout(() => {
+                  // A quick logout or account switch must not show another
+                  // person's first-visit tour or notification dialog.
+                  if (currentNick !== tourNick) return;
+                  const started = window.kapaniOnboardingStart({
+                      onDone: () => finishFirstVisitTour(tourNick)
+                  });
+                  if (!started) setTimeout(() => showFirstPushPrompt(), 500);
+              }, 320);
+          } else {
+              setTimeout(() => showFirstPushPrompt(), 600);
+          }
 
           // If permission was already granted, reuse the persisted browser Web Push
           // subscription. No permission prompt is shown automatically here.
@@ -2642,6 +2716,9 @@ async function getSwReg(){
     try{const swUrl=new URL('./firebase-messaging-sw.js',location.href);const scope=new URL('./',location.href).pathname;_swReg=await navigator.serviceWorker.register(swUrl.href,{scope});await navigator.serviceWorker.ready;window._kapaniPushState={...(window._kapaniPushState||{}),serviceWorkerRegistered:true,serviceWorkerScope:_swReg.scope};return _swReg;}
     catch(err){window._kapaniPushState={...(window._kapaniPushState||{}),status:'sw_failed',error:String(err?.message||err)};console.error('[Kapani Push] Service Worker registration failed:',err);return null;}
 }
+// PWA/offline support must not depend on granting push permission or signing in.
+// Registration is passive: no notification prompt or push subscription here.
+window.addEventListener('load',()=>{void getSwReg().catch(error=>console.debug('[Kapani PWA]',error));},{once:true});
 async function requestNotificationPermission(){
     if(!('Notification' in window))return 'unsupported';
     if(Notification.permission==='granted')return 'granted';
@@ -3015,19 +3092,30 @@ window.finishFirstPushPrompt = async function(allow){
 }
 function showFirstPushPrompt(){
     if(!currentNick || wasFirstPushPromptHandled() || qs('firstPushPrompt')) return;
+    // Never display the permission offer over the first-visit tour.
+    if(qs('kpFirstVisitTour')) return;
     if(!('Notification' in window)) { markFirstPushPromptHandled(); return; }
     if(Notification.permission==='granted') { markFirstPushPromptHandled(); void requestPushPermission().catch(e=>console.error('[push permission prompt]',e)); return; }
     const m=document.createElement('div');
     m.id='firstPushPrompt';
-    m.style.cssText='position:fixed;inset:0;width:100vw;max-width:none;height:100dvh;box-sizing:border-box;background:rgba(1,17,11,.78);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(5px);';
-    m.innerHTML=`<div style="width:100%;max-width:490px;background:linear-gradient(145deg,#1d4a33 0%,#123928 48%,#0b281d 100%);border:1px solid rgba(150,217,161,.34);border-radius:24px;padding:22px;box-shadow:0 30px 88px rgba(0,0,0,.5);">
-      <div style="font-size:34px;margin-bottom:8px;">🔔</div>
-      <div style="font-size:20px;font-weight:900;margin-bottom:6px;">Включить уведомления?</div>
-      <div style="font-size:13px;line-height:1.55;color:var(--muted);margin-bottom:16px;">Получайте сообщения, переводы, уведомления мэрии и другие важные события Капани.</div>
-      <button class="btn btn-primary" type="button" onclick="finishFirstPushPrompt(true)">🔔 Включить уведомления</button>
-      <button class="btn btn-ghost" type="button" style="margin-top:8px;" onclick="finishFirstPushPrompt(false)">Не сейчас</button>
+    m.className='kp-tour-push-overlay';
+    m.setAttribute('role','dialog');
+    m.setAttribute('aria-modal','true');
+    m.setAttribute('aria-labelledby','kpTourPushTitle');
+    m.innerHTML=`<div class="kp-tour-push-card">
+      <span class="kp-tour-push-kicker">Последний штрих</span>
+      <div class="kp-tour-push-orb" aria-hidden="true"><span></span></div>
+      <h2 id="kpTourPushTitle">Оставаться на связи?</h2>
+      <p>Когда тебе напишут, придёт перевод или появится важная новость, мы можем сразу сообщить. Если не хочется — ничего страшного, включишь позже в профиле.</p>
+      <div class="kp-tour-push-actions">
+        <button class="kp-tour-push-allow" type="button">Включить уведомления</button>
+        <button class="kp-tour-push-later" type="button">Не сейчас</button>
+      </div>
     </div>`;
+    m.querySelector('.kp-tour-push-allow').addEventListener('click',()=>window.finishFirstPushPrompt(true));
+    m.querySelector('.kp-tour-push-later').addEventListener('click',()=>window.finishFirstPushPrompt(false));
     document.body.appendChild(m);
+    m.querySelector('.kp-tour-push-allow').focus({preventScroll:true});
 }
 
 if(!window._kapaniChatPresenceUnloadBound){
@@ -4061,39 +4149,53 @@ window.saveDisplayJob=async function(){
     toast('✅ Звание обновлено','green');
     const snap=await get(userRef(currentNick)); if(snap.exists()) updateHeader(snap.val());
 };
-window.savingsDeposit=async function(){
-    if(!await requireSpendable()) return;
-    const amt=parseInt(qs('savingsAmt')?.value||'0',10)||0;
-    if(amt<=0) return toast('⚠️ Введите сумму','gold');
+let savingsMoveBusy=false;
+async function moveSavings(direction){
+    if(savingsMoveBusy)return;
+    const amount=Number(qs('savingsAmt')?.value);
+    if(!Number.isSafeInteger(amount)||amount<1||amount>1000000){
+        return toast('Введите целую сумму от 1 до 1 000 000 ₽','gold');
+    }
+    if(direction==='deposit'&&!await requireSpendable())return;
+    // A failed response is ambiguous: the server may have committed already.
+    // Retrying the same amount and direction must reuse its operation UUID.
+    const key=`kp_pending_savings:${currentNick}:${direction}:${amount}`;
+    let operationId;
+    try{operationId=sessionStorage.getItem(key)||crypto.randomUUID();sessionStorage.setItem(key,operationId);}
+    catch{operationId=crypto.randomUUID();}
+    savingsMoveBusy=true;
+    const buttons=[...document.querySelectorAll('[data-kp-savings-action]')];
+    buttons.forEach(button=>button.disabled=true);
+    const status=qs('savingsOperationStatus');
+    if(status)status.textContent='Проводим операцию и ждём подтверждения сервера…';
     try{
         const {data,error}=await supabase.rpc('kp_savings_move',{
-            p_direction:'deposit',p_amount:amt,p_request_id:crypto.randomUUID()
+            p_direction:direction,p_amount:amount,p_request_id:operationId
         });
         if(error)throw error;
-        if(!data?.ok)throw new Error('Операция не проведена');
+        if(!data?.ok)throw new Error('Сервер не подтвердил операцию');
+        try{sessionStorage.removeItem(key);}catch{}
         allUsersCache[currentNick]={...(allUsersCache[currentNick]||{}),
             balance:Number(data.balance),savingsBalance:Number(data.savingsBalance)};
-    }catch(e){return toast('❌ Пополнение не выполнено: '+(e.message||e),'red');}
-    if(qs('savingsAmt')) qs('savingsAmt').value='';
-    toast(`📈 +${amt}₽ на накопительный счёт`,'green');
-    renderSavingsDisplay();
-};
-window.savingsWithdraw=async function(){
-    const amt=parseInt(qs('savingsAmt')?.value||'0',10)||0;
-    if(amt<=0) return toast('⚠️ Введите сумму','gold');
-    try{
-        const {data,error}=await supabase.rpc('kp_savings_move',{
-            p_direction:'withdraw',p_amount:amt,p_request_id:crypto.randomUUID()
-        });
-        if(error)throw error;
-        if(!data?.ok)throw new Error('Операция не проведена');
-        allUsersCache[currentNick]={...(allUsersCache[currentNick]||{}),
-            balance:Number(data.balance),savingsBalance:Number(data.savingsBalance)};
-    }catch(e){return toast('❌ Снятие не выполнено: '+(e.message||e),'red');}
-    if(qs('savingsAmt')) qs('savingsAmt').value='';
-    toast(`💰 Снято ${amt}₽ с накопительного счёта`,'green');
-    renderSavingsDisplay();
-};
+        if(qs('savingsAmt'))qs('savingsAmt').value='';
+        if(status)status.textContent=direction==='deposit'
+            ?`Пополнено на ${amount.toLocaleString('ru-RU')} ₽. Операция подтверждена.`
+            :`Снято ${amount.toLocaleString('ru-RU')} ₽. Операция подтверждена.`;
+        toast(direction==='deposit'?'Накопительный счёт пополнен':'Средства переведены на основной счёт','green');
+        _accountTransactionsCache=null;_accountTransactionsAt=0;
+        void renderRecentTransfers();
+        renderSavingsDisplay();
+    }catch(error){
+        const message=error?.message||String(error);
+        if(status)status.textContent=`Операция не подтверждена: ${message}. Повторите с той же суммой — повторного списания не будет.`;
+        toast('Операция не подтверждена: '+message,'red');
+    }finally{
+        savingsMoveBusy=false;
+        buttons.forEach(button=>button.disabled=false);
+    }
+}
+window.savingsDeposit=()=>moveSavings('deposit');
+window.savingsWithdraw=()=>moveSavings('withdraw');
 function renderSavingsDisplay(){
     const el=qs('savingsBalanceDisplay');
     const rateEl=qs('savingsRateDisplay');
@@ -4117,7 +4219,7 @@ async function refreshSavingsFromServer(){
             toast(`Начислено ${Number(data.credited).toLocaleString('ru-RU')} ₽ процентов за ${data.days} дн.`,'green');
         }
         return data;
-    })().catch(e=>{console.warn('[savings accrual]',e);toast('Проценты недоступны до установки SQL 018: '+(e?.message||e),'red');return null;})
+    })().catch(e=>{console.warn('[savings accrual]',e);toast('Не удалось обновить накопления: '+(e?.message||e),'red');return null;})
       .finally(()=>{savingsAccrualRequest=null;});
     return savingsAccrualRequest;
 }

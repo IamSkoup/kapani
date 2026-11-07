@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0b241b">
+<link rel="manifest" href="./manifest.json">
 <script>
 window.kapaniShowBootError = function(title, detail) {
   const show = () => {
@@ -49,7 +50,7 @@ try {
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="application-name" content="Капани">
 <meta name="description" content="Официальное приложение Капани">
-<link rel="apple-touch-icon" href="./image.png">
+<link rel="apple-touch-icon" href="./assets/icon-192.png">
 <link rel="icon" type="image/png" href="./image.png">
 <title>Капани - официальный сайт</title>
 <script>
@@ -1212,6 +1213,8 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 <link rel="stylesheet" href="assets/kapani-v14-fixes.css?v=15">
 <link rel="stylesheet" href="assets/kapani-v16.css?v=16&amp;rev=27">
 <link rel="stylesheet" href="assets/kapani-v18-business.css?v=18">
+<link rel="stylesheet" href="assets/kapani-v28.css?v=28">
+<link rel="stylesheet" href="assets/kapani-onboarding.css?v=29">
 </head>
 <body>
 
@@ -1728,11 +1731,13 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
             </div>
             <div class="kp-savings-rate">Ставка: <span id="savingsRateDisplay">+0,3% в день</span></div>
         </div>
+        <p class="kp-savings-explain">Проценты начисляются автоматически на сервере за полные сутки, даже если сайт закрыт. Ставка 0,3% в день с капитализацией.</p>
         <input type="number" id="savingsAmt" placeholder="Сумма (₽)" min="1" step="1">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
-            <button class="btn btn-gold btn-sm" onclick="savingsDeposit()">➕ Пополнить</button>
-            <button class="btn btn-ghost btn-sm" onclick="savingsWithdraw()">➖ Снять</button>
+            <button class="btn btn-gold btn-sm" data-kp-savings-action="deposit" onclick="savingsDeposit()">Пополнить</button>
+            <button class="btn btn-ghost btn-sm" data-kp-savings-action="withdraw" onclick="savingsWithdraw()">Снять</button>
         </div>
+        <p id="savingsOperationStatus" class="kp-savings-status" role="status" aria-live="polite"></p>
     </div>
     <div class="card">
         <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
@@ -2841,7 +2846,8 @@ window.kapaniLoadLeaflet = (function(){
 <script src="./functions/subscription-config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8" defer></script>
 <script src="./assets/supabase-bridge-classic.js?v=17&amp;rev=27" defer></script>
-<script src="./assets/kapani-main-classic.js?v=21&amp;rev=27" defer></script>
+<script src="./assets/kapani-onboarding.js?v=29" defer></script>
+<script src="./assets/kapani-main-classic.js?v=29" defer></script>
 
 <script>
 // ═══════════════════════════════════════════════════
