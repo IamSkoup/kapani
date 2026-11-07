@@ -147,3 +147,116 @@ html.v8-reduce-motion .kp-tour-stage, html.v8-reduce-motion .kp-tour-next, html.
 .kp-tour-push-later { background: rgba(255,255,255,.06); color: #c5dfcc; }
 .kp-tour-push-actions button:focus-visible { outline: 2px solid #c5ffdb; outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .kp-tour-push-overlay, .kp-tour-push-card { animation: none !important; } }
+
+/* Revision 33. The real app stays visible through the spotlight. Four small
+   masks are cheaper and more reliable than a giant blurred overlay. */
+.kp-tour-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 12050 !important;
+  display: block !important;
+  padding: 0 !important;
+  overflow: hidden;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  isolation: isolate;
+  touch-action: none;
+  animation: kpTourReveal .35s ease both;
+}
+.kp-tour-overlay::before { display: none !important; }
+.kp-tour-shade {
+  position: absolute;
+  z-index: 1;
+  pointer-events: auto;
+  background: rgba(1, 11, 8, .85);
+  transition: top .45s cubic-bezier(.2,.8,.2,1), left .45s cubic-bezier(.2,.8,.2,1),
+              width .45s cubic-bezier(.2,.8,.2,1), height .45s cubic-bezier(.2,.8,.2,1);
+}
+.kp-tour-spotlight {
+  position: absolute;
+  z-index: 2;
+  pointer-events: auto;
+  border-radius: 16px;
+  border: 2px solid rgba(145, 252, 186, .96);
+  box-sizing: border-box;
+  background: transparent;
+  box-shadow: 0 0 0 5px rgba(124, 228, 158, .17), 0 0 38px rgba(106, 251, 155, .36), inset 0 0 20px rgba(115, 223, 153, .11);
+  transition: top .45s cubic-bezier(.2,.8,.2,1), left .45s cubic-bezier(.2,.8,.2,1),
+              width .45s cubic-bezier(.2,.8,.2,1), height .45s cubic-bezier(.2,.8,.2,1);
+}
+.kp-tour-bubble {
+  position: absolute;
+  z-index: 4;
+  box-sizing: border-box;
+  width: min(380px, calc(100vw - 20px));
+  max-height: calc(100dvh - 20px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid rgba(160, 241, 183, .4);
+  border-radius: 22px;
+  background: linear-gradient(153deg, #194a33 0%, #0d2c20 54%, #091d17 100%);
+  box-shadow: 0 20px 72px rgba(0,0,0,.62), 0 0 0 1px rgba(5,20,13,.5), inset 0 1px 0 rgba(255,255,255,.09);
+  color: #f2fcf4;
+  animation: kpTourBubbleAppear .45s cubic-bezier(.2,.85,.25,1) both;
+  transition: top .45s cubic-bezier(.2,.8,.2,1), left .45s cubic-bezier(.2,.8,.2,1), opacity .17s ease, transform .17s ease;
+}
+.kp-tour-bubble .kp-tour-top { padding: 17px 20px 0; gap: 8px; }
+.kp-tour-bubble .kp-tour-brand { font-size: 11px; color: #c4dfcb; font-weight: 750; }
+.kp-tour-bubble .kp-tour-skip { font-size: 12px; padding: 7px; white-space: nowrap; }
+.kp-tour-content { padding: 15px 22px 16px; }
+.kp-tour-bubble .kp-tour-label { display: block; margin: 0 0 10px; color: #95ebba; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; font-weight: 900; }
+.kp-tour-type-title, .kp-tour-type-description { position: relative; }
+.kp-tour-type-title .kp-tour-type-spacer, .kp-tour-type-title h2 {
+  display: block; margin: 0; width: 100%; font: 850 clamp(21px, 2.5vw, 27px)/1.22 inherit;
+  letter-spacing: -.028em; overflow-wrap: anywhere;
+}
+.kp-tour-type-title .kp-tour-type-spacer { font-family: inherit; font-size: clamp(21px, 2.5vw, 27px); font-weight: 850; line-height: 1.22; visibility: hidden; }
+.kp-tour-type-title h2 { position: absolute; left: 0; top: 0; color: #f4fff6; font-family: inherit; font-size: clamp(21px, 2.5vw, 27px); font-weight: 850; line-height: 1.22; }
+.kp-tour-type-description { margin-top: 13px; }
+.kp-tour-type-description .kp-tour-type-spacer, .kp-tour-type-description p {
+  display: block; margin: 0; width: 100%; font-family: inherit; font-size: 13px; font-weight: 470; line-height: 1.62; letter-spacing: 0; overflow-wrap: anywhere;
+}
+.kp-tour-type-description .kp-tour-type-spacer { visibility: hidden; }
+.kp-tour-type-description p { position: absolute; left: 0; top: 0; color: #c6dece; }
+.kp-tour-typing #kpTourDescription:not(:empty)::after,
+.kp-tour-typing #kpTourTitle:not(:empty):last-child::after {
+  content: ''; display: inline-block; width: 2px; height: .91em; margin-left: 2px;
+  vertical-align: -.11em; background: #9cfdc0; animation: kpTourCaret .65s step-end infinite;
+}
+.kp-tour-bubble .kp-tour-bottom { padding: 13px 17px 16px; gap: 10px; border-top: 1px solid rgba(153,228,182,.12); }
+.kp-tour-bubble .kp-tour-progress { gap: 8px; min-width: 94px; }
+.kp-tour-bubble .kp-tour-progress > span { font-size: 11px; color: #a6cdb4; }
+.kp-tour-bubble .kp-tour-track { width: 62px; height: 4px; }
+.kp-tour-bubble .kp-tour-controls { gap: 4px; }
+.kp-tour-bubble .kp-tour-back { padding: 10px 8px; font-size: 12px; }
+.kp-tour-bubble .kp-tour-next { min-width: 102px; padding: 10px 14px; font-size: 12px; border-radius: 11px; }
+.kp-tour-bubble .kp-tour-next:focus-visible, .kp-tour-bubble .kp-tour-skip:focus-visible,
+.kp-tour-bubble .kp-tour-back:focus-visible { outline: 2px solid #b7f6cb; outline-offset: 2px; }
+.kp-tour-bubble.kp-tour-changing { opacity: 0; transform: translateY(9px); }
+.kp-tour-overlay.kp-tour-closing { opacity: 0; pointer-events: none; transition: opacity .23s ease; }
+@keyframes kpTourBubbleAppear { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes kpTourCaret { 50% { opacity: 0; } }
+@media (max-width: 480px) {
+  .kp-tour-bubble { width: min(345px, calc(100vw - 20px)); border-radius: 19px; }
+  .kp-tour-bubble .kp-tour-top { padding: 12px 14px 0; }
+  .kp-tour-content { padding: 12px 17px 13px; }
+  .kp-tour-type-title .kp-tour-type-spacer, .kp-tour-type-title h2 { font-size: 21px; }
+  .kp-tour-type-description .kp-tour-type-spacer, .kp-tour-type-description p { font-size: 12px; line-height: 1.5; }
+  .kp-tour-type-description { margin-top: 10px; }
+  .kp-tour-bubble .kp-tour-bottom { padding: 10px 13px 12px; }
+  .kp-tour-bubble .kp-tour-next { min-width: 88px; padding: 10px 10px; }
+  .kp-tour-spotlight { border-radius: 12px; }
+}
+@media (max-height: 550px) {
+  .kp-tour-content { padding-top: 8px; padding-bottom: 8px; }
+  .kp-tour-type-description { margin-top: 6px; }
+  .kp-tour-bubble .kp-tour-top { padding-top: 8px; }
+  .kp-tour-bubble .kp-tour-bottom { padding-top: 8px; padding-bottom: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kp-tour-shade, .kp-tour-spotlight, .kp-tour-bubble { transition: none !important; animation: none !important; }
+  .kp-tour-typing #kpTourDescription::after, .kp-tour-typing #kpTourTitle::after { animation: none !important; }
+}
+html.v8-reduce-motion .kp-tour-shade, html.v8-reduce-motion .kp-tour-spotlight,
+html.v8-reduce-motion .kp-tour-bubble { transition: none !important; animation: none !important; }

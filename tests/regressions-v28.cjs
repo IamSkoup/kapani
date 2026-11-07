@@ -20,7 +20,7 @@ assert.match(main, /window\.addEventListener\('load',\(\)=>\{void getSwReg\(\)/)
 assert.match(main, /if\(!data\?\.ok\)throw new Error/);
 assert.match(html, /id="savingsOperationStatus"[^>]*role="status"/);
 assert.match(html, /rel="manifest" href="\.\/manifest\.json"/);
-assert.match(html, /kapani-main-classic\.js\?v=(?:28|29|30)/);
+assert.ok(Number(html.match(/kapani-main-classic\.js\?v=(\d+)/)?.[1]||0)>=28);
 assert.match(html, /kapani-v28\.css\?v=28/);
 assert.equal(manifest.id, '/kapani/');
 assert.equal(manifest.background_color, '#071811');

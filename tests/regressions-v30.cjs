@@ -9,8 +9,8 @@ const css=read('assets/kapani-casino-performance.css');
 const sw=read('firebase-messaging-sw.js');
 
 assert.match(html,/kapani-casino-performance\.css\?v=30/);
-assert.match(html,/kapani-main-classic\.js\?v=30/);
-assert.match(sw,/kapani-static-v30/);
+assert.ok(Number(html.match(/kapani-main-classic\.js\?v=(\d+)/)?.[1]||0)>=30);
+assert.ok(Number(sw.match(/kapani-static-v(\d+)/)?.[1]||0)>=30);
 assert.match(sw,/kapani-casino-performance\.css\?v=30/);
 assert.match(main,/if\(host\.dataset\.kpCasinoBuilt!=='1'\|\|!host\.querySelector\('#v8CasinoBalance'\)\)/);
 assert.match(main,/host\.dataset\.kpCasinoBuilt='1'/);
