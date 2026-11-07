@@ -1,9 +1,9 @@
 /* Kapani Web Push Service Worker.
  * One Service Worker only: receives standard Web Push and renders system notifications.
  */
-const SW_VERSION = 'kapani-pwa-2026-11-07-v33';
+const SW_VERSION = 'kapani-pwa-2026-11-07-v34';
 const KAPANI_APP_PATH = '/kapani/';
-const KAPANI_STATIC_CACHE = 'kapani-static-v33';
+const KAPANI_STATIC_CACHE = 'kapani-static-v34';
 const KAPANI_STATIC_PREFIX = 'kapani-static-';
 const KAPANI_APP_SHELL = [
   './', './index.html', './config.js', './manifest.json',

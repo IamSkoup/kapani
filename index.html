@@ -1131,22 +1131,38 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
     from { opacity: .4; transform: translateX(-12px) translateY(3px); }
     to   { opacity: 1; transform: translateX(0) translateY(0); }
 }
-/* Centre a compact floating auth panel while preserving the site's backdrop. */
+/* Keep auth in the normal layout flow. Fixed + translated auth panels can be
+   stranded half outside iOS Safari's visual viewport (especially in-app). */
 @media (max-width: 640px) {
     html:has(#authSection.active):has(#mainApp[style*="display:none"], #mainApp[style*="display: none"]),
     body:has(#authSection.active):has(#mainApp[style*="display:none"], #mainApp[style*="display: none"]) {
-        overflow: hidden;
-        overscroll-behavior: none;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior-x: none;
     }
     body:has(#authSection.active):has(#mainApp[style*="display:none"], #mainApp[style*="display: none"]) {
-        height: 100svh;
+        height: auto;
         min-height: 100svh;
         padding-bottom: 0;
     }
+    body:has(#authSection.active:not([style*="display: none"])) > .container {
+        box-sizing: border-box;
+        width: 100%;
+        min-width: 0;
+        min-height: 100svh;
+        margin: 0;
+        padding: max(16px, env(safe-area-inset-top, 0px))
+                 max(14px, env(safe-area-inset-right, 0px))
+                 max(16px, env(safe-area-inset-bottom, 0px))
+                 max(14px, env(safe-area-inset-left, 0px));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
     #authSection.active {
-        position: fixed;
-        top: 50%;
-        left: 50%;
+        position: relative;
+        top: auto;
+        left: auto;
         right: auto;
         bottom: auto;
         z-index: 20;
@@ -1156,20 +1172,20 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
         justify-content: center;
         gap: clamp(8px, 1.5svh, 12px);
         box-sizing: border-box;
-        width: min(390px, calc(100vw - 44px));
+        width: min(390px, 100%);
+        min-width: 0;
         height: auto;
-        max-height: calc(100svh - max(24px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom)));
-        margin: 0;
+        max-height: none;
+        margin: auto;
         padding: 0;
         background: transparent !important;
         border: 0 !important;
         box-shadow: none !important;
         backdrop-filter: none !important;
-        transform: translate(-50%, -50%);
-        animation: none;
-        overflow: hidden;
-        overscroll-behavior: none;
-        touch-action: pan-x;
+        transform: none !important;
+        animation: none !important;
+        overflow: visible;
+        touch-action: pan-y;
     }
     #authSection .logo-card,
     #authSection .auth-card {
