@@ -118,7 +118,7 @@ test('doctor booking gives actionable errors', sql.includes('Cannot book an appo
   sql.includes('Hospital service is disabled') && main.includes('Нельзя записаться на приём к самому себе'));
 test('hospital panel loads protected view', main.includes("supabase.rpc('kp_hospital_view')") && main.includes("renderHospitalPanelServices(data?.services"));
 test('hospital service buttons are explicit', main.includes("'Включить':'Отключить'") && main.includes('>Изменить</button>'));
-test('casino wallet requires successful backend operation', main.includes("const result=await rpc('kp_casino_v8'") && main.includes('Сервер не подтвердил изменение игрового баланса'));
+test('casino wallet requires successful backend operation', main.includes("const result=await casinoRpc(kind,") && main.includes('Сервер не подтвердил изменение игрового баланса'));
 test('desktop sheets center in viewport', css.includes('#kpV8Sheet.v8-overlay') && css.includes('justify-content:center!important') && css.includes('align-items:center!important'));
 test('casino overlay ignores the global 640px max-width', css.includes('width:100vw!important;max-width:none!important;') && css.includes('min-width:100vw!important;height:100dvh!important;'));
 test('push prompt has green gradient, never old red', (main.includes('background:linear-gradient(145deg,#1d4a33') || tourCss.includes('background: linear-gradient(145deg, #19432f')) && !main.includes('max-width:490px;background:#170b10'));

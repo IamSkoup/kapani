@@ -14,7 +14,7 @@ const sw = read('firebase-messaging-sw.js');
 
 assert.match(html, /kapani-onboarding\.js\?v=29/);
 assert.match(html, /kapani-onboarding\.css\?v=29/);
-assert.ok(html.indexOf('kapani-onboarding.js?v=29') < html.indexOf('kapani-main-classic.js?v=29'));
+assert.ok(html.indexOf('kapani-onboarding.js?v=29') < html.indexOf('kapani-main-classic.js?v=30'));
 assert.match(main, /firstVisitTour:\s*\{\s*version:\s*1,\s*completed:\s*false/);
 assert.match(main, /await update\(userRef\(nick\),\s*\{settings:/);
 assert.match(main, /function needsFirstVisitTour\(profile\)/);
@@ -22,7 +22,7 @@ assert.match(main, /serverState\?\.completed === true/);
 assert.match(main, /function finishFirstVisitTour\(nick\)/);
 assert.match(main, /setTimeout\(\(\) => showFirstPushPrompt\(\), 420\)/);
 assert.match(main, /if\(qs\('kpFirstVisitTour'\)\) return/);
-assert.match(sw, /kapani-static-v29/);
+assert.match(sw, /kapani-static-v(?:29|30)/);
 assert.match(css, /prefers-reduced-motion/);
 assert.match(css, /@media \(max-width: 680px\)/);
 assert.equal((tour.match(/label: '/g) || []).length, 5);

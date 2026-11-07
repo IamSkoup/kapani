@@ -1,0 +1,52 @@
+/* Casino stability: avoid infinite GPU work while waiting for a network round. */
+#kpV8Sheet.v8-overlay {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: rgba(3, 20, 13, .96) !important;
+}
+#kpV8Sheet .v8-sheet,
+#kpV8Sheet .v8-game-stage,
+#casino .v8-game-card,
+#casino .v8-casino-banner {
+  filter: none !important;
+  -webkit-filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  will-change: auto !important;
+}
+#kpV8Sheet .v8-game-stage {
+  contain: paint;
+  background: linear-gradient(145deg, #1a3c2a, #0e271a);
+}
+#kpV8Sheet .v8-game-stage.playing > img,
+#kpV8Sheet .v8-game-stage > img {
+  animation: none !important;
+  transition: none !important;
+  transform: none !important;
+  opacity: .14;
+  will-change: auto !important;
+}
+#casino .v8-game-card {
+  contain: layout paint style;
+  transition: border-color .15s ease !important;
+}
+#casino .v8-game-card:hover { transform: none !important; }
+#kpV8Sheet #v8CasinoPlay[disabled] {
+  cursor: wait;
+  opacity: .72;
+  box-shadow: none;
+  pointer-events: none;
+}
+#kpV8Sheet #v8RoundResult { overflow-wrap: anywhere; }
+@media (max-width: 680px) {
+  #casino .v8-casino-banner { min-height: 174px !important; padding: 19px !important; }
+  #casino .v8-casino-banner > img { display: none !important; }
+  #casino .v8-casino-banner > div { width: 100% !important; }
+  #casino .v8-casino-banner h2 { font-size: 27px !important; margin: 9px 0 !important; }
+  #casino .v8-game-card > img { max-height: 105px !important; }
+  #kpV8Sheet .v8-game-stage { min-height: 180px !important; }
+  #kpV8Sheet .v8-game-stage > img { height: 115px !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #casino *, #kpV8Sheet .v8-game-stage * { animation: none !important; transition: none !important; }
+}

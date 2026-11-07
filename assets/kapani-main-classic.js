@@ -14711,28 +14711,116 @@ window.confirmCustomDeliveryPrice=id=>action('delivery:'+id,async()=>{toast('О�
 // Casino: four short server-settled games. No deck, seed or outcome is stored
 // client-side before the settlement. Existing casino money is not imported.
 const games={roulette:{title:'Roulette',sub:'Европейская рулетка',desc:'37 чисел. Красное и чёрное — ×2, зеро — ×36. Выплата включает ставку.',art:'roulette',choices:[['red','Красное'],['black','Чёрное'],['zero','Зеро']]},slots:{title:'Forest Gems',sub:'Три грани удачи',desc:'Три одинаковых символа — ×12. Ровно два одинаковых — ×1,5. Выплата округляется вниз.',art:'gems',choices:[]},dice:{title:'Lucky Six',sub:'Точный бросок',desc:'Выберите число от 1 до 6. За верный прогноз выплата ×5,7, включая ставку.',art:'dice',choices:[1,2,3,4,5,6].map(n=>[String(n),String(n)])},wheel:{title:'Green Wheel',sub:'Колесо Капани',desc:'20 равновероятных секторов: 11 ×0, 5 ×1, 2 ×2 и 2 ×5. Выплата включает ставку.',art:'wheel',choices:[]}};
-window.kapaniRenderCasino=async()=>{const host=qs('casino');if(!host)return;host.innerHTML=`<div class="v8-casino-top"><div><span class="v8-eyebrow">KAPANI CLUB</span><h2>Игровой зал</h2></div><button class="v8-balance" onclick="kpCasinoWallet()"><small>Игровой баланс</small><strong id="v8CasinoBalance">—</strong><span>Пополнить +</span></button></div><div class="v8-casino-banner"><div><span class="v8-eyebrow">Вечер в Капани</span><h2>Ваш ход.<br>Новая история.</h2><p>Четыре игры. Один игровой счёт.</p><button class="btn btn-ghost" onclick="kpCasinoMusic()" id="v8MusicButton">Включить музыку</button></div><img src="assets/casino-roulette.svg" alt="Рулетка"></div><div class="v8-section-label"><h3>Выберите игру</h3><span>Ставка до 1 000 ₽</span></div><div class="v8-game-grid">${Object.entries(games).map(([id,g])=>`<button class="v8-game-card" onclick="kpOpenGame('${id}')"><img src="assets/casino-${g.art}.svg" alt="" loading="lazy"><div><small>KAPANI ORIGINAL</small><h3>${g.title}</h3><p>${g.sub}</p></div></button>`).join('')}</div><div id="v8CasinoError" role="status"></div><div class="v8-note">Только игровая валюта Капани. Результат каждого раунда рассчитывается на сервере. Пополнение — до 10 000 ₽ в день, оборот ставок — до 20 000 ₽ в день. Выигрыш не гарантирован.</div><details class="v8-credits"><summary>Музыка и правила</summary><p>“Backbay Lounge” Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 License. <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.</p><p>Новый защищённый игровой счёт начинается с нуля. Старые подозрительные выигрыши не переносятся автоматически; основной счёт не изменяется.</p></details>`;try{v8.casino=await rpc('kp_casino_v8',{p_action:'view'});qs('v8CasinoBalance').textContent=money(v8.casino.balance);}catch(e){qs('v8CasinoError').textContent=errorText(e.message);}};
+const CASINO_REQUEST_TIMEOUT_MS=18000;
+let casinoViewRequest=null;
+let casinoLastViewAt=0;
+let casinoStateRevision=0;
+
+// End a stalled request instead of leaving an infinite spinner/animation.
+// The existing stable request ID is retained on timeout: the server might
+// already have committed the round, so retrying must never create another bet.
+async function casinoRpc(actionName,params={}){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),CASINO_REQUEST_TIMEOUT_MS);
+  try{
+    const {data,error}=await supabase.rpc('kp_casino_v8',{p_action:actionName,...params}).abortSignal(controller.signal);
+    if(error)throw new Error(controller.signal.aborted?'Сервер долго не отвечает. Повторите действие с той же суммой: вторая ставка не спишется.':error.message||'Операция не выполнена');
+    if(data===null||data===undefined)throw new Error('Нет подтверждения сервера. Повторите действие с той же суммой.');
+    return data;
+  }catch(error){
+    if(controller.signal.aborted)throw new Error('Сервер долго не отвечает. Повторите действие с той же суммой: вторая ставка не спишется.');
+    throw error;
+  }finally{clearTimeout(timer);}
+}
+window.kapaniRenderCasino=async()=>{
+  const host=qs('casino');if(!host)return;
+  // Keep the same game-card DOM across visits: reconstructing SVGs and layered
+  // cards on every navigation causes expensive paint/compositor allocations.
+  if(host.dataset.kpCasinoBuilt!=='1'||!host.querySelector('#v8CasinoBalance')){
+    host.innerHTML=`<div class="v8-casino-top"><div><span class="v8-eyebrow">KAPANI CLUB</span><h2>Игровой зал</h2></div><button class="v8-balance" onclick="kpCasinoWallet()"><small>Игровой баланс</small><strong id="v8CasinoBalance">—</strong><span>Пополнить +</span></button></div><div class="v8-casino-banner"><div><span class="v8-eyebrow">Вечер в Капани</span><h2>Ваш ход.<br>Новая история.</h2><p>Четыре игры. Один игровой счёт.</p><button class="btn btn-ghost" onclick="kpCasinoMusic()" id="v8MusicButton">Включить музыку</button></div><img src="assets/casino-roulette.svg" alt="Рулетка" decoding="async"></div><div class="v8-section-label"><h3>Выберите игру</h3><span>Ставка до 1 000 ₽</span></div><div class="v8-game-grid">${Object.entries(games).map(([id,g])=>`<button class="v8-game-card" onclick="kpOpenGame('${id}')"><img src="assets/casino-${g.art}.svg" alt="" loading="lazy" decoding="async"><div><small>KAPANI ORIGINAL</small><h3>${g.title}</h3><p>${g.sub}</p></div></button>`).join('')}</div><div id="v8CasinoError" role="status"></div><div class="v8-note">Только игровая валюта Капани. Результат каждого раунда рассчитывается на сервере. Пополнение — до 10 000 ₽ в день, оборот ставок — до 20 000 ₽ в день. Выигрыш не гарантирован.</div><details class="v8-credits"><summary>Музыка и правила</summary><p>“Backbay Lounge” Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 License. <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.</p><p>Новый защищённый игровой счёт начинается с нуля. Старые подозрительные выигрыши не переносятся автоматически; основной счёт не изменяется.</p></details>`;
+    host.dataset.kpCasinoBuilt='1';
+  }
+  const bal=qs('v8CasinoBalance');if(bal&&v8.casino)bal.textContent=money(v8.casino.balance);
+  // Coalesce repeated navigation into one request, then throttle refreshes
+  // for three seconds. A newly settled round always updates this cached state.
+  if(casinoViewRequest)return casinoViewRequest;
+  if(v8.casino&&Date.now()-casinoLastViewAt<3000)return;
+  const revisionAtStart=casinoStateRevision;
+  casinoViewRequest=(async()=>{
+    try{
+      const view=await casinoRpc('view');
+      if(casinoStateRevision!==revisionAtStart)return;
+      v8.casino=view;casinoLastViewAt=Date.now();
+      const balanceEl=qs('v8CasinoBalance');if(balanceEl)balanceEl.textContent=money(view.balance);
+      const errorEl=qs('v8CasinoError');if(errorEl)errorEl.textContent='';
+    }catch(error){
+      const errorEl=qs('v8CasinoError');if(errorEl)errorEl.textContent=errorText(error.message);
+    }
+  })();
+  try{await casinoViewRequest;}finally{casinoViewRequest=null;}
+};
 window.kpCasinoWallet=()=>{modal('Баланс казино',`<div class="v8-wallet"><span class="v8-eyebrow">Игровой счёт · RUB</span><strong>${money(v8.casino?.balance)}</strong><p>Основной счёт: ${money(v8.casino?.main)}</p><label>Сумма перевода<input type="number" id="v8CasinoAmount" min="1" max="10000" step="1" inputmode="numeric" placeholder="Например, 500"></label><div class="v8-actions">${button('Пополнить','kpCasinoMove("deposit")')}${button('Вывести','kpCasinoMove("withdraw")','btn btn-ghost')}</div><p id="v8CasinoTransferStatus" role="status" class="v8-muted">Пополнение и вывод — между основным и игровым счетами. Комиссии нет. Дневной предел пополнения 10 000 ₽.</p></div>`);};
-window.kpCasinoMove=kind=>action('casino-money',async()=>{
+window.kpCasinoMove=kind=>action('casino-op',async()=>{
   const amount=Number(qs('v8CasinoAmount')?.value),status=qs('v8CasinoTransferStatus');
   if(!Number.isSafeInteger(amount)||amount<1||amount>10000){if(status)status.textContent='Введите целую сумму от 1 до 10 000 ₽';return;}
   if(!['deposit','withdraw'].includes(kind))return;
   const key=`casino:${kind}:${amount}`;
   if(status)status.textContent='Проверяем остаток и выполняем перевод на сервере...';
   try{
-    const result=await rpc('kp_casino_v8',{p_action:kind,p_id:requestID(key),p_amount:amount});
+    const result=await casinoRpc(kind,{p_id:requestID(key),p_amount:amount});
     if(!result||!Number.isFinite(Number(result.balance)))throw new Error('Сервер не подтвердил изменение игрового баланса');
-    v8.requests.delete(key);v8.casino=result;
+    v8.requests.delete(key);v8.casino=result;casinoStateRevision++;casinoLastViewAt=Date.now();
     if(status)status.textContent='Перевод подтверждён сервером';
     window.kpCloseSheet();await window.kapaniRenderCasino();await refreshBalance();
     toast(kind==='deposit'?'Игровой счёт пополнен':'Средства возвращены на основной счёт','green');
   }catch(e){if(status)status.textContent='Ошибка перевода: '+errorText(e.message);throw e;}
 });
-window.kpOpenGame=id=>{v8.game=id;const g=games[id];modal(g.title,`<div class="v8-game-stage"><img src="assets/casino-${g.art}.svg" alt="${html(g.sub)}"><div id="v8RoundResult" aria-live="polite">${g.sub}</div></div><p class="v8-muted">${g.desc}</p><label>Ставка<input id="v8Stake" type="number" value="100" min="1" max="1000" step="1"></label>${g.choices.length?`<label>Ваш выбор<select id="v8GameChoice">${g.choices.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label>`:''}${button('Играть','kpPlayGame()')}<p class="v8-muted">После отправки раунд нельзя отменить. При потере связи нажмите ещё раз: повторная ставка не спишется.</p>`);};
-window.kpPlayGame=()=>action('casino-round',async()=>{const amount=Number(qs('v8Stake').value),choice=qs('v8GameChoice')?.value||null,game=v8.game;if(!Number.isSafeInteger(amount)||amount<1||amount>1000)throw new Error('Ставка: от 1 до 1 000 ₽');const key=`round:${game}:${choice}:${amount}`;const stage=qs('v8RoundResult');stage.textContent='Раунд идёт…';stage.closest('.v8-game-stage').classList.add('playing');try{const result=await rpc('kp_casino_v8',{p_action:'play',p_id:requestID(key),p_amount:amount,p_game:game,p_choice:choice});v8.requests.delete(key);const gems=['◆','●','▲','■','⬟','✦'];const value=Array.isArray(result.outcome)?result.outcome.map(n=>gems[n]).join('  '):(game==='wheel'?'×':'')+result.outcome;stage.innerHTML=`<b>${html(value)}</b><span>${result.payout?`Выплата ${money(result.payout)}`:'Без выигрыша'}</span><small>Баланс: ${money(result.balance)}</small>`;v8.casino={...(v8.casino||{}),...result};if(qs('v8CasinoBalance'))qs('v8CasinoBalance').textContent=money(result.balance);}finally{stage.closest('.v8-game-stage')?.classList.remove('playing');}});
-const casinoAudio=new Audio();casinoAudio.preload='none';casinoAudio.src='assets/backbay-lounge.mp3';casinoAudio.loop=true;casinoAudio.volume=.22;
-document.addEventListener('visibilitychange',()=>{if(document.hidden)casinoAudio.pause();});
-window.kpCasinoMusic=async()=>{if(casinoAudio.paused){try{await casinoAudio.play();qs('v8MusicButton').textContent='Выключить музыку';}catch(e){toast('Не удалось воспроизвести музыку','gold');}}else{casinoAudio.pause();if(qs('v8MusicButton'))qs('v8MusicButton').textContent='Включить музыку';}};
+window.kpOpenGame=id=>{
+  const g=games[id];if(!g)return;
+  v8.game=id;
+  modal(g.title,`<div class="v8-game-stage"><img src="assets/casino-${g.art}.svg" alt="${html(g.sub)}" decoding="async"><div id="v8RoundResult" aria-live="polite">${g.sub}</div></div><p class="v8-muted">${g.desc}</p><label>Ставка<input id="v8Stake" type="number" value="100" min="1" max="1000" step="1"></label>${g.choices.length?`<label>Ваш выбор<select id="v8GameChoice">${g.choices.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label>`:''}<button class="btn btn-primary" id="v8CasinoPlay" type="button" onclick="kpPlayGame()">Играть</button><p class="v8-muted">Если связь пропадёт, повтори действие с той же ставкой. Повторно деньги не спишутся.</p>`);
+};
+window.kpPlayGame=()=>action('casino-op',async()=>{
+  const amount=Number(qs('v8Stake')?.value),choice=qs('v8GameChoice')?.value||null,game=v8.game;
+  if(!Number.isSafeInteger(amount)||amount<1||amount>1000)throw new Error('Ставка: от 1 до 1 000 ₽');
+  const key=`round:${game}:${choice}:${amount}`;
+  const stage=qs('v8RoundResult'),playButton=qs('v8CasinoPlay');
+  if(!stage)return;
+  const stageFrame=stage.closest('.v8-game-stage');
+  stage.textContent='Считаем результат…';
+  stageFrame?.classList.add('playing');
+  if(playButton){playButton.disabled=true;playButton.textContent='Подождите…';}
+  try{
+    const result=await casinoRpc('play',{p_id:requestID(key),p_amount:amount,p_game:game,p_choice:choice});
+    if(!result||!Number.isFinite(Number(result.balance))||!Number.isFinite(Number(result.payout)))
+      throw new Error('Сервер вернул неполный результат. Повторите действие с той же ставкой.');
+    v8.requests.delete(key);
+    const gems=['◆','●','▲','■','⬟','✦'];
+    const value=Array.isArray(result.outcome)?result.outcome.map(n=>gems[n]||'?').join('  '):(game==='wheel'?'×':'')+result.outcome;
+    stage.innerHTML=`<b>${html(value)}</b><span>${result.payout?`Выплата ${money(result.payout)}`:'Без выигрыша'}</span><small>Баланс: ${money(result.balance)}</small>`;
+    v8.casino={...(v8.casino||{}),...result};casinoStateRevision++;casinoLastViewAt=Date.now();
+    const balanceEl=qs('v8CasinoBalance');if(balanceEl)balanceEl.textContent=money(result.balance);
+  }catch(error){
+    stage.textContent='Не удалось получить результат. Повтори действие с той же ставкой.';
+    throw error;
+  }finally{
+    stageFrame?.classList.remove('playing');
+    if(playButton){playButton.disabled=false;playButton.textContent='Играть ещё';}
+  }
+});
+// The 8.5 MB soundtrack must not load or decode until the resident asks for it.
+let casinoAudio=null;
+function stopCasinoAudio(){
+  if(casinoAudio){casinoAudio.pause();casinoAudio.removeAttribute('src');casinoAudio.load();casinoAudio=null;}
+  const button=qs('v8MusicButton');if(button)button.textContent='Включить музыку';
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopCasinoAudio();});
+window.kpCasinoMusic=async()=>{
+  if(casinoAudio&&!casinoAudio.paused){stopCasinoAudio();return;}
+  if(!casinoAudio){casinoAudio=new Audio();casinoAudio.preload='none';casinoAudio.src='assets/backbay-lounge.mp3';casinoAudio.loop=true;casinoAudio.volume=.22;}
+  try{await casinoAudio.play();const button=qs('v8MusicButton');if(button)button.textContent='Выключить музыку';}
+  catch(error){stopCasinoAudio();toast('Не удалось воспроизвести музыку','gold');}
+};
 // Disable all old public casino entrypoints, even if an old link is retained.
 ['kapaniCasinoDeposit','kapaniCasinoWithdraw'].forEach(name=>window[name]=window.kpCasinoWallet);
 
@@ -15033,7 +15121,7 @@ window.saveEditNews=id=>action('v10-news-comment-edit',async()=>{
 const navV7=window.navTo;
 window.navTo=function(id,...args){
   if(id==='shop')id='jobs';
-  if(id!=='casino')casinoAudio.pause();
+  if(id!=='casino')stopCasinoAudio();
   const r=navV7(id,...args);
   if(id==='adminPage')void action('civic-load',()=>window.kpLoadCivic());
   if(id==='profile')applySettings(allUsersCache[currentNick]?.settings);
