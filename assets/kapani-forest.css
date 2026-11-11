@@ -154,6 +154,8 @@ html[data-season] .bottom-nav .bn-item:hover {
 .hero-welcome { font:500 clamp(24px,2.7vw,40px)/1.1 Georgia,serif; color:#f5f4e9; }
 #home .hero-name { font:700 clamp(31px,3.6vw,54px)/1.08 Georgia,serif;color:#fffdf4;letter-spacing:-.025em;text-shadow:0 3px 12px rgba(0,0,0,.26); }
 #home .hero-role { display:inline-flex;align-items:center;min-height:29px;padding:4px 13px;border-radius:999px;background:rgba(11,43,27,.82);border:1px solid rgba(171,205,163,.25);color:#dfebd8;margin-top:16px;font-size:12px; }
+.kp-first-visit-launcher { display:block;max-width:100%;margin:14px 0 0;padding:12px 18px !important;font-size:13px;text-align:center;white-space:normal; }
+.kp-first-visit-launcher[hidden],#inviterRepairWrap[hidden] { display:none !important; }
 #home .hero-rule { display:none; }
 #home .home-hero .stats-row { display:flex;flex-direction:column;gap:8px;margin:0; }
 #home .home-hero .stat-box {
@@ -339,7 +341,9 @@ html[data-season] .bottom-nav .bn-item:hover {
   #bottomNav .bn-item .ico { width:23px;height:23px;flex-shrink:0; }
   #bottomNav #bn6, #bottomNav #bn8, #bottomNav #bn9, #bottomNav #bn10, #bottomNav #bn11 { display:none!important; }
   #bottomNav #bnMore { display:flex;margin-top:auto;border-top:1px solid rgba(170,206,168,.14);border-radius:0;padding-top:15px; }
-  #home .service-catalog { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #home .service-catalog { grid-template-columns:repeat(2,minmax(0,1fr));width:100%; }
+  #home .home-hero { width:100%;box-sizing:border-box; }
+  #home .service-tiles { min-width:0; }
 }
 @media (max-width:1079px) {
   #bottomNav #bnMore { display:flex; }
