@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Проверка доставки при 1000 объявлениях</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#15271c;color:#e0f6e7;font:14px Arial,sans-serif}
+    header{padding:12px 18px;display:flex;gap:16px;flex-wrap:wrap}
+    iframe{display:block;border:1px solid #79ad8a;width:100%;max-width:100%;height:900px;background:#08180f}
+  </style>
+</head>
+<body>
+<header><strong>Настоящая страница доставки</strong><span>1000 тестовых объявлений без записи в базу</span><span id="result">Загрузка…</span></header>
+<iframe id="realApp" title="Раздел доставки" src="../index.html"></iframe>
+<script>
+  const frame=document.getElementById('realApp'),status=document.getElementById('result');
+  frame.addEventListener('load',async()=>{
+    const win=frame.contentWindow,doc=frame.contentDocument;
+    const auth=doc.getElementById('authSection');if(auth){auth.style.display='none';auth.classList.remove('active');}
+    const loading=doc.getElementById('loadingOverlay');if(loading)loading.style.display='none';
+    const main=doc.getElementById('mainApp');if(main)main.style.display='block';
+    const header=doc.getElementById('gHeader');if(header)header.style.display='flex';
+    const home=doc.getElementById('home');if(home)home.classList.remove('active');
+    const page=doc.getElementById('deliveryOrderPage');if(page)page.classList.add('active');
+    try{
+      // Only mutate in-memory caches in this isolated iframe. No test account,
+      // marketplace writes, payments or deliveries are created.
+      win.eval(`lastMarketListings=Object.fromEntries(Array.from({length:1000},(_,n)=>[String(n),{
+        id:String(n),title:'Товар '+(n+1),seller:'Продавец',category:'other',status:'active',
+        price:500+n,createdAt:1000+n
+      }]));allBusinessesCache={test:{name:'Тестовый магазин',status:'active',delivery:true,
+        lat:52,lng:39,products:{one:{name:'Тестовый товар',price:100}}}};`);
+      await win.renderDeliveryOrderOptions();
+      status.textContent='Форма вверху, каталог ниже';
+    }catch(e){status.textContent='Ошибка: '+e.message;}
+  });
+</script>
+</body>
+</html>

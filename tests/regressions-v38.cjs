@@ -11,6 +11,7 @@ const tour=read('assets/kapani-onboarding.js');
 const css=read('assets/kapani-onboarding.css');
 const html=read('index.html');
 const fixture=read('tests/onboarding-real-app.html');
+const deliveryFixture=read('tests/delivery-real-app.html');
 
 assert.match(tour,/document\.createElement\('dialog'\)/);
 assert.match(tour,/root\.showModal\(\)/);
@@ -19,6 +20,8 @@ assert.match(css,/max-width: none !important/);
 assert.match(tour,/root\.addEventListener\('cancel'/);
 assert.match(main,/localStorage\.getItem\(pendingKey\) === '1'\) return true/);
 assert.match(fixture,/src="\.\.\/index\.html"/);
+assert.match(deliveryFixture,/length:1000/);
+assert.match(deliveryFixture,/renderDeliveryOrderOptions\(\)/);
 assert.match(html,/kapani-onboarding\.js\?v=38/);
 
 const start=main.indexOf('const deliveryCatalogView=');
