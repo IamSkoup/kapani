@@ -29,7 +29,7 @@ function harness(width,height,reduced){
     constructor(id,rect={left:0,top:0,right:350,bottom:250}){
       this.id=id;this.rect={...rect,width:rect.right-rect.left,height:rect.bottom-rect.top};
       this.style={};this.dataset={};this.classList=new ClassList();this.attrs={};this.nodes={};this.events={};
-      this.textContent='';this.hidden=false;this.offsetWidth=350;this.offsetHeight=265;
+      this.textContent='';this.hidden=false;this.offsetWidth=id==='#kpTourBubble'?(width<=480?Math.min(345,width-20):380):350;this.offsetHeight=id==='#kpTourBubble'?320:265;
     }
     setAttribute(key,val){this.attrs[key]=val;}
     addEventListener(name,callback){this.events[name]=callback;}
@@ -52,7 +52,7 @@ function harness(width,height,reduced){
   };
   const targets=Object.fromEntries(Object.entries(coords).map(([id,r])=>[id,new Element(id,r)]));
   const document={
-    root:null,activeElement:null,documentElement:{classList:new ClassList()},listeners:{},
+    root:null,activeElement:null,documentElement:{classList:new ClassList(),clientWidth:width},listeners:{},
     body:new Element('body'),
     getElementById(id){return id==='kpFirstVisitTour'?this.root:null;},
     createElement(id){return new Element(id);},
@@ -60,7 +60,7 @@ function harness(width,height,reduced){
     addEventListener(type,fn){this.listeners[type]=fn;},
     removeEventListener(type){delete this.listeners[type];}
   };
-  document.body.appendChild=node=>{document.root=node;};
+  document.documentElement.appendChild=node=>{document.root=node;};
   const window={
     innerWidth:width,innerHeight:height,scrollX:0,scrollY:0,events:{},
     matchMedia:()=>({matches:reduced}),getComputedStyle:()=>({display:'block',visibility:'visible'}),
@@ -82,6 +82,7 @@ function harness(width,height,reduced){
   assert.equal(root.attrs['aria-modal'],'true');
   assert.equal(root.querySelector('#kpTourCount').textContent,'01 / 06');
   assert.ok(Number.parseInt(root.querySelector('.kp-tour-spotlight').style.width)>50);
+  assert.equal(root.querySelector('.kp-tour-shade-left').style.width,undefined,'single continuous spotlight avoids four-strip masking');
   ui.run(180);
   assert.ok(root.querySelector('#kpTourTitle').textContent.length>0,'title prints progressively');
   assert.ok(root.querySelector('#kpTourTitle').textContent.length<40);
@@ -112,4 +113,18 @@ function harness(width,height,reduced){
   assert.equal(completed,1);
   assert.equal(ui.document.root,null);
 }
-console.log('OK: revision 33 desktop/mobile spotlight geometry, typewriter, reduced motion, navigation and completion.');
+for(const [width,height] of [[320,568],[390,844],[1024,768],[1920,1080]]){
+  const ui=harness(width,height,true);
+  ui.window.kapaniOnboardingStart();
+  const root=ui.document.root;
+  const bubble=root.querySelector('#kpTourBubble');
+  for(let step=0;step<6;step++){
+    const x=Number.parseInt(bubble.style.left),y=Number.parseInt(bubble.style.top);
+    assert.ok(x>=0&&x+bubble.offsetWidth<=width,`${width}x${height}: bubble fits horizontally at step ${step}`);
+    assert.ok(y>=0&&y+bubble.offsetHeight<=height,`${width}x${height}: bubble fits vertically at step ${step}`);
+    if(step<5){root.querySelector('.kp-tour-next').dispatch('click');ui.run(0);}
+  }
+  root.querySelector('.kp-tour-skip').dispatch('click');ui.run(0);
+  assert.equal(ui.document.root,null,`${width}x${height}: skip must unblock page`);
+}
+console.log('OK: six-step tour, unclipped overlay, desktop/tablet/phone geometry, keyboard navigation and completion.');

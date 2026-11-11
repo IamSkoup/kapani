@@ -13413,7 +13413,7 @@ window.updateDeliverySourceHint = function() {
         if (businessBlock) businessBlock.style.display = 'grid';
         if (marketBlock) marketBlock.style.display = 'none';
     } else {
-        hint.textContent = '🛍 Выберите конкретное объявление с маркетплейса.';
+        hint.textContent = 'Выберите товар. Доставка возможна после подтверждения продавцом и оплаты покупки в К-маркете.';
         hint.style.display = 'block';
         if (businessBlock) businessBlock.style.display = 'none';
         if (marketBlock) marketBlock.style.display = 'grid';
@@ -13489,7 +13489,8 @@ window.updateDeliverySummary = function() {
         if (item) {
             const seller = allUsersCache?.[item.seller]?.displayName || item.seller || 'Продавец';
             summary.style.display = 'block';
-            summary.innerHTML = `Выбрано: <b>${escHtml(item.title || 'Объявление')}</b> от <b>${escHtml(seller)}</b>${item.price ? ` · ${Number(item.price).toLocaleString()} ₽` : ''}`;
+            const stage=item.status==='sold'?'Товар оплачен. Можно оформить доставку.':item.status==='meeting_requested'?'Ожидаем подтверждения продавца.':item.status==='meeting_confirmed'?'Продавец согласен. Оплатите товар в К-маркете.':'Чтобы заказать доставку, сначала договоритесь с продавцом и оплатите товар.';
+            summary.innerHTML = `Выбрано: <b>${escHtml(item.title || 'Объявление')}</b> от <b>${escHtml(seller)}</b>${item.price ? ` · ${Number(item.price).toLocaleString()} ₽` : ''}<div class="v8-muted">${stage}</div>`;
             return;
         }
     }
@@ -14475,7 +14476,7 @@ window.kpV8Point=point;
 window.kpCurrentBizId=()=>currentBizId;
 async function rpc(name,args={}){const {data,error}=await supabase.rpc(name,args);if(error)throw new Error(error.message||'Операция не выполнена');return data;}
 async function action(key,fn){if(v8.busy.has(key))return;v8.busy.add(key);try{return await fn();}catch(e){console.error('[Kapani v8]',e);toast(errorText(e.message),'red');}finally{v8.busy.delete(key);}}
-function errorText(t){const errors={'Insufficient funds':'Недостаточно средств','Insufficient casino balance':'Недостаточно средств на игровом счёте','Wait for the current round':'Подождите завершения текущего раунда','Daily deposit limit: 10000':'Дневной лимит пополнения — 10 000 ₽','Verified active account required':'Нужен подтверждённый мэрией активный аккаунт','This time is already booked':'Это время уже занято. Выберите другое','Event payout reserve exhausted':'Лимит ставок этого события исчерпан','Seller must confirm the purchase first':'Сначала продавец должен подтвердить покупку','Cannot cancel after service has started':'После начала выполнения отмена недоступна'};if(/function.*does not exist|Could not find the function|schema cache/i.test(t))return 'База ещё не обновлена. Примените INSTALL.sql из новой версии сайта.';return errors[t]||t;}
+function errorText(t){const errors={'Insufficient funds':'Недостаточно средств','Insufficient casino balance':'Недостаточно средств на игровом счёте','Insufficient funds or balance limit':'Не хватает денег на счёте для создания события и формирования резерва выплат.','Wait for the current round':'Подождите завершения текущего раунда','Daily deposit limit: 10000':'Дневной лимит пополнения — 10 000 ₽','Verified active account required':'Нужен подтверждённый мэрией активный аккаунт','This time is already booked':'Это время уже занято. Выберите другое','Event payout reserve exhausted':'Лимит ставок этого события исчерпан','Invalid event':'Укажите название события от 3 до 120 символов и выберите тип «Спорт» или «Битва».','Invalid side or odds':'Укажите обе стороны события и коэффициенты от 1,01 до 20.','Invalid budget or deadline':'Резерв должен быть от 100 до 100 000 ₽, а завершение ставок — в будущем.','Mayor access required':'Создание и завершение событий доступно только мэру.','Seller must confirm the purchase first':'Сначала продавец должен подтвердить покупку','Cannot cancel after service has started':'После начала выполнения отмена недоступна'};if(/function.*does not exist|Could not find the function|schema cache/i.test(t))return 'База ещё не обновлена. Примените INSTALL.sql из новой версии сайта.';return errors[t]||t;}
 function requestID(key){const storageKey='kp_pending_v8:'+currentNick+':'+key;try{if(!v8.requests.has(key)){v8.requests.set(key,sessionStorage.getItem(storageKey)||crypto.randomUUID());sessionStorage.setItem(storageKey,v8.requests.get(key));}}catch{if(!v8.requests.has(key))v8.requests.set(key,crypto.randomUUID());}return v8.requests.get(key);}
 const requestDelete=v8.requests.delete.bind(v8.requests);v8.requests.delete=key=>{try{sessionStorage.removeItem('kp_pending_v8:'+currentNick+':'+key);}catch{}return requestDelete(key);};
 function modal(title,content){window.kpCloseSheet();const el=document.createElement('div');el.id='kpV8Sheet';el.className='v8-overlay';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.innerHTML=`<section class="v8-sheet"><header><h2>${html(title)}</h2><button class="v8-icon" aria-label="Закрыть" onclick="kpCloseSheet()">×</button></header><div class="v8-sheet-body">${content}</div></section>`;el.addEventListener('click',e=>{if(e.target===el)window.kpCloseSheet();});document.body.appendChild(el);el._previous=document.activeElement;el.querySelector('button')?.focus();document.body.classList.add('v8-sheet-open');return el;}
@@ -14642,9 +14643,15 @@ if(qs('driverPage')){const el=document.createElement('label');el.className='v8-s
 // Delivery catalog: store first, then its products; purchased marketplace goods
 // are available for a new delivery after cancelling the previous delivery.
 deliveryBusinessOptions=()=>Object.entries(allBusinessesCache||{}).map(([id,b])=>({...b,id})).filter(b=>b.status==='active'&&b.delivery===true&&point(b.lat,b.lng)&&Object.keys(b.products||{}).length);
-deliveryMarketplaceOptions=()=>Object.entries(lastMarketListings||{}).map(([id,l])=>({...l,id})).filter(l=>l.buyer===currentNick&&l.status==='sold'&&point(l.sellerLat,l.sellerLng)&&!['work','service'].includes(l.category));
+// Show available goods as well as the buyer's completed purchases. A visible
+// listing is not automatically a paid purchase: the server enforces the
+// seller-confirmed marketplace payment before it accepts a delivery.
+deliveryMarketplaceOptions=()=>Object.entries(lastMarketListings||{}).map(([id,l])=>({...l,id})).filter(l=>l&&!l.archived&&!['work','service'].includes(l.category)&&l.seller!==currentNick&&(
+  l.status==='active'||(l.buyer===currentNick&&['meeting_requested','meeting_confirmed','sold'].includes(l.status))
+)).sort((a,b)=>Number(b.pinnedUntil||0)-Number(a.pinnedUntil||0)||Number(b.createdAt||0)-Number(a.createdAt||0));
 const optionsV7=window.renderDeliveryOrderOptions;
-window.renderDeliveryOrderOptions=renderDeliveryOrderOptions=async function(force=false){await optionsV7(force);let host=qs('v8DeliveryCatalog');if(!host){host=document.createElement('div');host.id='v8DeliveryCatalog';qs('deliveryOrderPage')?.prepend(host);}if(!host)return;const businesses=deliveryBusinessOptions();const listings=deliveryMarketplaceOptions();host.innerHTML=`<div class="v8-delivery-hero"><span class="v8-eyebrow">Капани рядом</span><h2>Всё нужное —<br>к вашей двери</h2><p>Выберите магазин или свою покупку.<br>Доставка — 200 ₽ за километр.</p></div><h3>Бизнесы с доставкой</h3><div class="v8-business-grid">${businesses.map(b=>`<button class="v8-business" onclick="kpDeliveryBusiness('${jsEsc(b.id)}')"><img src="${html(b.banner?safeURL(b.banner):'assets/delivery-forest.webp')}" alt="" loading="lazy"><span><b>${html(b.name)}</b><small>${html(b.category||'Товары и услуги')} · ${Object.keys(b.products||{}).length} товаров</small></span></button>`).join('')||'<p class="v8-empty">Пока нет бизнесов с доставкой и точкой на карте.</p>'}</div><h3>Мои покупки на маркетплейсе</h3><div class="v8-purchased">${listings.map(l=>`<button class="btn btn-ghost" onclick="kpDeliveryForListing('${jsEsc(l.id)}')">${html(l.title)} →</button>`).join('')||'<p class="v8-muted">Здесь появятся оплаченные или подтверждённые продавцом покупки с точкой на карте.</p>'}</div>`;};
+window.renderDeliveryOrderOptions=renderDeliveryOrderOptions=async function(force=false){await optionsV7(force);let host=qs('v8DeliveryCatalog');if(!host){host=document.createElement('div');host.id='v8DeliveryCatalog';qs('deliveryOrderPage')?.prepend(host);}if(!host)return;const businesses=deliveryBusinessOptions();const listings=deliveryMarketplaceOptions();host.innerHTML=`<div class="v8-delivery-hero"><span class="v8-eyebrow">Капани рядом</span><h2>Всё нужное —<br>к вашей двери</h2><p>Выберите магазин или товар с маркетплейса.<br>Доставка — 200 ₽ за километр.</p></div><h3>Бизнесы с доставкой</h3><div class="v8-business-grid">${businesses.map(b=>`<button class="v8-business" onclick="kpDeliveryBusiness('${jsEsc(b.id)}')"><img src="${html(b.banner?safeURL(b.banner):'assets/delivery-forest.webp')}" alt="" loading="lazy"><span><b>${html(b.name)}</b><small>${html(b.category||'Товары и услуги')} · ${Object.keys(b.products||{}).length} товаров</small></span></button>`).join('')||'<p class="v8-empty">Пока нет бизнесов с доставкой и точкой на карте.</p>'}</div><h3>Товары с маркетплейса</h3><p class="v8-muted">Новые объявления видны сразу. Для доставки сначала договоритесь с продавцом и оплатите товар после его подтверждения.</p><div class="v8-purchased">${listings.map(l=>`<div class="v8-listing-delivery"><button class="btn btn-ghost" onclick="kpDeliveryForListing('${jsEsc(l.id)}')">${html(l.title)} · ${l.priceNegotiable?'цена договорная':money(l.price)} <small>${l.status==='sold'?'Куплено — можно доставить':l.status==='meeting_requested'?'Ожидает продавца':l.status==='meeting_confirmed'?'Продавец согласен — оплатите':'Продаётся'}</small></button>${l.status==='active'?button('Договориться',`kpDeliveryRequestListing('${jsEsc(l.id)}')`,'btn btn-ghost btn-sm'):''}</div>`).join('')||'<p class="v8-muted">Физических товаров пока нет. Объявления об услугах и работе нельзя доставить.</p>'}</div>`;};
+window.kpDeliveryRequestListing=id=>window.requestMeeting(id).then(async()=>{await window.renderDeliveryOrderOptions(true);});
 const deliveryBasketByBiz=Object.create(null);
 function deliveryBasketFor(bid){return deliveryBasketByBiz[bid] ||= Object.create(null);}
 function deliveryBasketLines(bid){
@@ -14742,6 +14749,13 @@ window.placeDeliveryOrder=()=>action('delivery-create',async()=>{
     updateDeliverySummary();
   }else{
     data.listingId=qs('deliveryOrderMarketItem').value;
+    const listing=deliveryMarketplaceOptions().find(x=>x.id===data.listingId);
+    if(!listing)throw new Error('Выберите объявление из списка маркетплейса');
+    if(listing.status==='active')throw new Error('Сначала договоритесь с продавцом о покупке. Отправьте заявку в карточке объявления, дождитесь подтверждения и оплатите товар. Затем оформите доставку.');
+    if(listing.status==='meeting_requested')throw new Error('Продавец ещё не подтвердил покупку. Дождитесь ответа, затем оплатите товар в К-маркете.');
+    if(listing.status==='meeting_confirmed')throw new Error('Продавец подтвердил покупку. Сначала оплатите товар в К-маркете, после этого закажите доставку.');
+    if(listing.status!=='sold'||listing.buyer!==currentNick)throw new Error('Это объявление пока не куплено вами.');
+    if(!point(listing.sellerLat,listing.sellerLng))throw new Error('Продавец не отметил точку выдачи. Попросите его указать место получения перед доставкой.');
     key='delivery:'+JSON.stringify(data);
     order=await service('delivery','create',requestID(key),data);
   }
@@ -14750,7 +14764,7 @@ window.placeDeliveryOrder=()=>action('delivery-create',async()=>{
     try{await rpc('kp_delivery_alert_v22',{p_id:order.id});}
     catch(error){console.warn('[delivery in-app alerts]',error);}
   }
-  toast('Заказ создан. Деньги за товары и доставку зарезервированы до получения.','green');
+  toast(source==='business'?'Заказ создан. Оплата товаров и доставки зарезервирована до получения.':'Доставка оформлена. Оплата доставки зарезервирована до получения.','green');
   await renderMyDeliveryOrders();
   // Web Push goes through the configured worker. It must not block or undo
   // the already committed order if an offline device cannot receive it.
@@ -14900,7 +14914,24 @@ const eventsV7=window.renderEventsSection;window.renderEventsSection=async()=>{a
 window.kpBet=(id,side)=>{const e=eventData.events.find(e=>e.id===id);if(!e||e.status!=='open'||new Date(e.closes_at)<=new Date())return toast('Приём ставок закрыт','gold');modal('Ставка на событие',`<h3>${html(e.title)}</h3><p>${html(e.sides[side].name)} · коэффициент ${e.sides[side].odds}</p><label>Сумма<input id="v8BetStake" type="number" min="10" max="1000" value="100"></label><p class="v8-muted">Выплата включает ставку. После подтверждения отменить свою ставку нельзя. При отмене события мэрией деньги возвращаются.</p>${button('Подтвердить ставку',`kpSubmitBet('${id}',${side})`)}`);};
 window.kpSubmitBet=(id,side)=>action('event-bet',async()=>{const stake=Number(qs('v8BetStake').value);if(!Number.isSafeInteger(stake)||stake<10||stake>1000)throw new Error('Ставка от 10 до 1 000 ₽');const key=`bet:${id}:${side}:${stake}`;await rpc('kp_events_v8',{p_action:'bet',p_id:requestID(key),p_data:{event:id,side,stake}});v8.requests.delete(key);window.kpCloseSheet();await window.kpLoadEvents();void refreshBalance();});
 window.kpCreateEventForm=()=>modal('Новое событие',`<label>Название<input id="v8EventTitle" maxlength="120"></label><label>Тип<select id="v8EventKind"><option value="sport">Спорт</option><option value="battle">Битва</option></select></label><div class="v8-two"><label>Первая сторона<input id="v8SideA" maxlength="80"></label><label>Коэффициент<input id="v8OddA" type="number" min="1.01" max="20" step=".01" value="1.9"></label><label>Вторая сторона<input id="v8SideB" maxlength="80"></label><label>Коэффициент<input id="v8OddB" type="number" min="1.01" max="20" step=".01" value="1.9"></label></div><label>Приём ставок до<input id="v8EventClose" type="datetime-local"></label><label>Резерв выплат из вашего счёта<input id="v8EventBudget" type="number" min="100" max="100000" value="5000"></label><p class="v8-muted">Коэффициенты фиксируются при создании. Резерв блокируется до результата. Неиспользованный остаток возвращается.</p>${button('Создать событие','kpCreateEvent()')}`);
-window.kpCreateEvent=()=>action('event-create',async()=>{const d={title:qs('v8EventTitle').value.trim(),kind:qs('v8EventKind').value,sides:[{name:qs('v8SideA').value.trim(),odds:Number(qs('v8OddA').value)},{name:qs('v8SideB').value.trim(),odds:Number(qs('v8OddB').value)}],closesAt:new Date(qs('v8EventClose').value).toISOString(),budget:Number(qs('v8EventBudget').value)};const key='event:'+JSON.stringify(d);await rpc('kp_events_v8',{p_action:'create',p_id:requestID(key),p_data:d});v8.requests.delete(key);window.kpCloseSheet();toast('Событие создано, резерв сформирован','green');});
+window.kpCreateEvent=()=>action('event-create',async()=>{
+  const title=qs('v8EventTitle').value.trim(),kind=qs('v8EventKind').value;
+  const a=qs('v8SideA').value.trim(),b=qs('v8SideB').value.trim();
+  const oddsA=Number(qs('v8OddA').value),oddsB=Number(qs('v8OddB').value);
+  const time=qs('v8EventClose').value,closesAt=time?new Date(time):new Date(NaN);
+  const budgetInput=qs('v8EventBudget').value,budget=Number(budgetInput);
+  if(title.length<3||title.length>120)throw new Error('Напишите название события длиной от 3 до 120 символов.');
+  if(!['sport','battle'].includes(kind))throw new Error('Выберите тип события — спорт или битва.');
+  if(!a||!b||a.length>80||b.length>80)throw new Error('Заполните названия обеих сторон. Каждое название — до 80 символов.');
+  if(a.toLocaleLowerCase('ru-RU')===b.toLocaleLowerCase('ru-RU'))throw new Error('Стороны события должны отличаться.');
+  if(!qs('v8OddA').value||!qs('v8OddB').value||![oddsA,oddsB].every(x=>Number.isFinite(x)&&x>=1.01&&x<=20))throw new Error('Укажите коэффициенты от 1,01 до 20 для обеих сторон.');
+  if(!Number.isFinite(closesAt.getTime())||closesAt.getTime()<=Date.now())throw new Error('Укажите время окончания приёма ставок позже текущего времени.');
+  if(!budgetInput||!Number.isSafeInteger(budget)||budget<100||budget>100000)throw new Error('Резерв выплат — целое число от 100 до 100 000 ₽.');
+  const d={title,kind,sides:[{name:a,odds:oddsA},{name:b,odds:oddsB}],closesAt:closesAt.toISOString(),budget};
+  const key='event:'+JSON.stringify(d);
+  await rpc('kp_events_v8',{p_action:'create',p_id:requestID(key),p_data:d});
+  v8.requests.delete(key);window.kpCloseSheet();toast('Событие создано, резерв сформирован','green');
+});
 window.kpSettleEvent=id=>{const e=eventData.events.find(e=>e.id===id);modal('Результат события',`<h3>${html(e.title)}</h3><label>Победитель<select id="v8Winner">${e.sides.map((s,i)=>`<option value="${i}">${html(s.name)}</option>`).join('')}</select></label><p class="v8-muted">После закрытия ставок результат можно подтвердить один раз.</p>${button('Подтвердить результат',`kpConfirmResult('${id}')`)}`);};
 window.kpConfirmResult=id=>action('event-result',async()=>{if(!confirm('Зафиксировать результат и выполнить выплаты?'))return;await rpc('kp_events_v8',{p_action:'settle',p_id:id,p_data:{winner:Number(qs('v8Winner').value)}});window.kpCloseSheet();await window.kpLoadEvents();});
 window.kpCancelEvent=id=>action('event-result',async()=>{if(!confirm('Отменить событие и вернуть все ставки?'))return;await rpc('kp_events_v8',{p_action:'cancel',p_id:id});await window.kpLoadEvents();});

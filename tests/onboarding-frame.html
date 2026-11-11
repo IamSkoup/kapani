@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kapani first visit layout test</title>
+<link rel="stylesheet" href="../assets/kapani-onboarding.css">
+<style>
+  *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Arial,sans-serif;color:#eff8f0;background:#0c1a12}
+  #gHeader{height:65px;display:flex;align-items:center;justify-content:space-between;gap:15px;padding:12px;background:#152f21}
+  #gHeader .header-links,#gHeader .header-actions{display:flex;gap:8px}
+  #home{max-width:1280px;padding:30px;margin:auto}
+  #home .home-hero{display:flex;justify-content:space-between;gap:22px;min-height:210px;padding:25px;background:linear-gradient(100deg,#184330,#305d45);border-radius:15px}
+  #home .hero-person{display:flex;gap:14px;align-items:center}
+  #home .hero-avatar{background:#629a77;border-radius:18px;width:72px;height:72px}
+  #home .hero-welcome{font-size:24px}#home .hero-name{font-size:30px;font-weight:750}
+  #home .stats-row{padding:14px;border:1px solid #719e7d;border-radius:12px;align-self:center}
+  #home .service-catalog{margin-top:35px;display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  #home .service-group{display:grid;gap:14px}
+  #home .quick-card{height:105px;padding:18px;border:1px solid #558f68;border-radius:15px;background:#204734}
+  #bottomNav{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:space-around;background:#132e20;padding:14px;z-index:3}
+  @media(max-width:600px){#home{padding:18px}#home .home-hero{display:block;min-height:260px;padding:19px}#home .stats-row{margin-top:15px}#home .service-catalog{grid-template-columns:1fr;gap:12px}#gHeader .header-links{display:none}}
+</style>
+<script src="../assets/kapani-onboarding.js" defer></script>
+<script>window.addEventListener('load',()=>window.kapaniOnboardingStart({onDone:()=>document.documentElement.dataset.finished='yes'}));</script>
+</head><body>
+<header id="gHeader"><div class="header-links">Главная · Новости</div><strong>Капани</strong><div class="header-actions"><span class="h-bal">0 ₽</span></div></header>
+<main id="home"><div class="home-hero"><div class="hero-person"><div class="hero-avatar"></div><div><div class="hero-welcome">Добро пожаловать</div><div class="hero-name">Тест</div></div></div><div class="stats-row">Банк и счёт</div></div>
+<div class="service-catalog"><div class="service-group"><div class="quick-card" onclick="navTo('market')">Маркетплейс</div><div class="quick-card">Доставка</div></div><div class="service-group"><div class="quick-card" onclick="navTo('jobs')">Работа</div><div class="quick-card">Обучение</div></div></div></main>
+<nav id="bottomNav"><span id="bn1">Чаты</span><span id="bn4">Банк</span><span id="bn7">Профиль</span><span id="bnMore">Разделы</span></nav>
+</body></html>

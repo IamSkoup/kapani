@@ -18,7 +18,7 @@ assert.match(css, /touch-action:\s*pan-y;/);
 assert.match(css, /overflow-y:\s*auto;/);
 assert.match(css, /safe-area-inset-top/);
 assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
-assert.match(sw, /kapani-static-v36/);
+assert.match(sw, /kapani-static-v37/);
 
 // In narrow viewports the containing block has safe-area padding and the
 // panel can never be wider than its remaining content box.

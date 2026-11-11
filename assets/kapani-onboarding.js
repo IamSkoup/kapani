@@ -50,7 +50,6 @@
     const find=sel=>root.querySelector(sel),bubble=find('#kpTourBubble'),spot=find('.kp-tour-spotlight');
     const title=find('#kpTourTitle'),copy=find('#kpTourDescription');
     const back=find('.kp-tour-back'),next=find('.kp-tour-next'),skip=find('.kp-tour-skip');
-    const shades=['top','left','right','bottom'].map(side=>find('.kp-tour-shade-'+side));
     const wait=(ms,fn)=>window.setTimeout(fn,ms);
 
     function stopTyping(){if(typing)window.clearTimeout(typing);typing=0;bubble.classList.remove('kp-tour-typing');}
@@ -82,12 +81,14 @@
     }
     function layout(){
       if(finishing)return;
-      const vw=window.innerWidth,vh=window.innerHeight,pad=vw<480?6:9;
+      const vw=document.documentElement?.clientWidth||window.innerWidth;
+      const vh=window.innerHeight,pad=vw<480?6:9;
       const rect=target?.getBoundingClientRect();
-      const l=clamp((rect?.left??24)-pad,5,vw-30),t=clamp((rect?.top??70)-pad,5,vh-30);
+      const l=clamp((rect?.left??24)-pad,5,Math.max(5,vw-30)),t=clamp((rect?.top??70)-pad,5,Math.max(5,vh-30));
       const r=clamp((rect?.right??150)+pad,l+20,vw-5),b=clamp((rect?.bottom??120)+pad,t+20,vh-5);
-      place(spot,l,t,r-l,b-t);place(shades[0],0,0,vw,t);place(shades[1],0,t,l,b-t);
-      place(shades[2],r,t,vw-r,b-t);place(shades[3],0,b,vw,vh-b);
+      // A single spotlight casts the full-screen shade. Four independent
+      // rectangles left uncovered strips on some desktop scaling settings.
+      place(spot,l,t,r-l,b-t);
       const margin=vw<480?10:16,gap=vw<480?15:22,w=bubble.offsetWidth,h=bubble.offsetHeight;
       const options=[
         {side:'right',x:r+gap,y:(t+b-h)/2,fits:r+gap+w<=vw-margin},
@@ -152,8 +153,22 @@
       else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
     }
     skip.addEventListener('click',finish);back.addEventListener('click',()=>move(-1));next.addEventListener('click',()=>move(1));
-    document.body.appendChild(root);document.body.classList.add('kp-tour-open');
+    // Attach to <html>, outside the app's body/layout rules. On desktop the
+    // body may be clipped, which made this fixed overlay cover only one side.
+    document.documentElement.appendChild(root);document.body.classList.add('kp-tour-open');
     document.addEventListener('keydown',onKeydown,true);window.addEventListener('resize',scheduleLayout);window.addEventListener('scroll',scheduleLayout,true);
-    render();next.focus({preventScroll:true});return true;
+    try {
+      render();next.focus({preventScroll:true});return true;
+    } catch(error) {
+      // Never strand a newly registered user behind an unclickable scrim.
+      console.error('[Kapani onboarding] failed to open:',error);
+      stopTyping();window.clearTimeout(scrollJob);
+      if(frame)window.cancelAnimationFrame(frame);
+      document.removeEventListener('keydown',onKeydown,true);
+      window.removeEventListener('resize',scheduleLayout);
+      window.removeEventListener('scroll',scheduleLayout,true);
+      root.remove();document.body.classList.remove('kp-tour-open');
+      return false;
+    }
   };
 })();

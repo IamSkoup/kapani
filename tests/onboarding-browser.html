@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kapani tour responsive test</title>
+<style>html,body{font:14px Arial,sans-serif;background:#111b17;color:#e3f5e8}body{margin:15px}iframe{display:block;border:2px solid #477354;max-width:100%;background:#0c1a12}label{display:block;margin-bottom:8px}</style></head>
+<body><label id="size"></label><iframe title="Тест адаптации обучения" src="onboarding-frame.html"></iframe>
+<script>
+const sizes={phone:[320,568],mobile:[390,844],tablet:[768,900],desktop:[1280,800]};
+const key=new URLSearchParams(location.search).get('size')||'desktop';
+const [width,height]=sizes[key]||sizes.desktop;
+document.getElementById('size').textContent=`Проверка ${key} — ${width} × ${height}`;
+const frame=document.querySelector('iframe');frame.style.width=width+'px';frame.style.height=height+'px';
+</script></body></html>
