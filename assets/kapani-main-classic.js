@@ -1630,7 +1630,7 @@ window.handleAuth = async function() {
             // Referral metadata is stored on the newly-created user's own record.
             // This preserves the existing Firebase user-write boundary; the advertiser's
             // weekly aggregate is materialized later by the advertiser's economy cycle.
-            const createdUser=(await get(userRef(nick))).val()||userData;
+            let createdUser=(await get(userRef(nick))).val()||userData;
             localStorage.setItem('kp_s', nick);
             sessionStorage.setItem('kp_s', nick);
             localStorage.setItem('kp_auth', JSON.stringify({ nick, name: nameInput, displayName: nameInput }));
@@ -1642,6 +1642,22 @@ window.handleAuth = async function() {
             _kapaniSessionPassword = password;
             syncCurrentNick();
             await ensureAuth();
+            if(advertiserReferrer && createdUser.invitedBy!==advertiserReferrer.nick){
+                // Older registration workers do not always retain optional
+                // inviter fields. Repair only through an authenticated,
+                // one-time server procedure tied to this new account.
+                const {data:claimed,error:claimError}=await supabase.rpc('kp_claim_signup_referrer_v31',{
+                    p_inviter:advertiserReferrer.nick
+                });
+                if(claimError||!claimed?.ok){
+                    console.error('[advertiser referral] signup repair failed:',claimError);
+                    toast('Аккаунт создан, но приглашение не записалось. Обратитесь в мэрию.','red');
+                }else{
+                    createdUser={...createdUser,invitedBy:advertiserReferrer.nick,
+                        referralCreatedAt:createdUser.createdAt||now};
+                    allUsersCache[nick]=createdUser;
+                }
+            }
             try {
                 // kp_tree_bootstrap_user strips extra signup fields, so write
                 // the first-visit marker through the owner-only settings RPC.
@@ -1703,6 +1719,8 @@ function finishFirstVisitTour(nick) {
         localStorage.setItem(`kp_first_visit_done_${nick}`, '1');
         localStorage.removeItem(`kp_first_visit_pending_${nick}`);
     } catch (_) {}
+    const tourLauncher=qs('firstVisitTourLauncher');
+    if(tourLauncher) tourLauncher.hidden=true;
     // Save across devices without expanding the profile patch allowlist.
     // The settings object is already owner-editable through kp_profile_patch.
     void (async () => {
@@ -1720,6 +1738,33 @@ function finishFirstVisitTour(nick) {
     })();
     // This fires only after the tour has fully closed, including when skipped.
     if (currentNick === nick) setTimeout(() => showFirstPushPrompt(), 420);
+}
+
+window.kapaniRestartFirstTour=function(){
+    if(!currentNick)return false;
+    const launcher=qs('firstVisitTourLauncher');
+    if(typeof window.kapaniOnboardingStart!=='function'){
+        if(launcher)launcher.hidden=false;
+        toast('Обучение ещё не загрузилось. Обновите страницу и попробуйте снова.','gold');
+        return false;
+    }
+    const tourNick=currentNick;
+    const started=window.kapaniOnboardingStart({onDone:()=>finishFirstVisitTour(tourNick)});
+    if(started && launcher)launcher.hidden=true;
+    return started;
+};
+function scheduleFirstVisitTour(profile){
+    const firstVisit=needsFirstVisitTour(profile);
+    const launcher=qs('firstVisitTourLauncher');
+    if(launcher)launcher.hidden=!firstVisit;
+    if(!firstVisit){setTimeout(()=>showFirstPushPrompt(),600);return;}
+    const tourNick=currentNick;
+    setTimeout(()=>{
+        if(currentNick!==tourNick)return;
+        // A visible fallback remains available if a CDN, script load or
+        // browser extension prevents the guided tour from starting.
+        if(typeof window.kapaniOnboardingStart==='function')window.kapaniRestartFirstTour();
+    },500);
 }
 
 function startApp() {
@@ -1766,26 +1811,12 @@ function startApp() {
     Promise.resolve()
       .then(()=>criticalProfileLoad)
       .then(profileSnapshot=>{
-          const firstVisit = needsFirstVisitTour(profileSnapshot?.val?.() || null);
           try{ revealApp(); }catch(e){ console.error('[Kapani] Failed to reveal app shell:',e); if(header) header.style.display='flex'; if(bottom) bottom.style.display='flex'; if(main) main.style.display='block'; }
           if(loStatus) loStatus.textContent='Готово!';
           if(loBar) loBar.style.cssText='width:100%;transition:width .2s ease;';
           hideLoadingSafe();
           handleKapaniPushDeepLink();
-          if (firstVisit && typeof window.kapaniOnboardingStart === 'function') {
-              const tourNick = currentNick;
-              setTimeout(() => {
-                  // A quick logout or account switch must not show another
-                  // person's first-visit tour or notification dialog.
-                  if (currentNick !== tourNick) return;
-                  const started = window.kapaniOnboardingStart({
-                      onDone: () => finishFirstVisitTour(tourNick)
-                  });
-                  if (!started) setTimeout(() => showFirstPushPrompt(), 500);
-              }, 320);
-          } else {
-              setTimeout(() => showFirstPushPrompt(), 600);
-          }
+          scheduleFirstVisitTour(profileSnapshot?.val?.() || null);
 
           // If permission was already granted, reuse the persisted browser Web Push
           // subscription. No permission prompt is shown automatically here.
@@ -1806,6 +1837,15 @@ function startApp() {
               try { requestPersistentStorage(); } catch(e) {}
               if(typeof window.startKapaniRentExpiryWatcher === 'function') window.startKapaniRentExpiryWatcher();
           }, {timeout: 1500});
+      }).catch(error=>{
+          // A transient profile timeout must not leave the entire desktop
+          // viewport behind a blank loading screen. Local registration
+          // pending state can still start the guided tour.
+          console.error('[Kapani] profile startup failed:',error);
+          try{revealApp();}catch(_){}
+          hideLoadingSafe();
+          scheduleFirstVisitTour(null);
+          toast('Не удалось загрузить часть данных. Проверьте соединение и обновите страницу.','gold');
       });
 }
 
@@ -2410,6 +2450,11 @@ function updateHeader(u) {
         } else {
             jtw.style.display = 'none';
         }
+    }
+    const inviterRepair=qs('inviterRepairWrap');
+    if(inviterRepair){
+        const accountAge=Date.now()-Number(u.createdAt||0);
+        inviterRepair.hidden=!!u.invitedBy || !(accountAge>=0 && accountAge<=259200000);
     }
     
     // Profile description
@@ -4085,9 +4130,43 @@ window.saveDisplayJob=async function(){
     const sel=qs('jobTitleSelect'); if(!sel) return;
     const role=sel.value;
     if(!role) return;
-    await update(userRef(currentNick), { displayJob: role });
-    toast('✅ Звание обновлено','green');
-    const snap=await get(userRef(currentNick)); if(snap.exists()) updateHeader(snap.val());
+    const previous=allUsersCache[currentNick]?.displayJob;
+    try{
+        const {data,error}=await supabase.rpc('kp_set_display_job_v31',{p_role:role});
+        if(error)throw error;
+        if(!data?.ok)throw new Error('Сервер не сохранил звание');
+        const fresh=(await get(userRef(currentNick))).val()||{...allUsersCache[currentNick],displayJob:role};
+        allUsersCache[currentNick]={...fresh,displayJob:role};
+        window.allUsersCache=allUsersCache;
+        updateHeader(allUsersCache[currentNick]);
+        const displayed=qs('uJobDisp');if(displayed)displayed.textContent=getUserBusinessRoleLabel(allUsersCache[currentNick],currentNick);
+        toast('Звание обновлено','green');
+    }catch(error){
+        sel.value=previous||role;
+        console.error('[profile displayed job]',error);
+        toast('Не удалось сменить звание: '+(error.message||'ошибка сервера'),'red');
+    }
+};
+window.repairSignupReferral=async function(){
+    if(!currentNick)return;
+    const input=prompt('Введите ник рекламщика, который вас пригласил:');
+    if(input===null)return;
+    const inviter=String(input).trim();
+    if(!inviter)return toast('Введите ник пригласившего','gold');
+    try{
+        const candidate=await findUserByPublicName(inviter);
+        if(!candidate)throw new Error('Пользователь не найден');
+        const {data,error}=await supabase.rpc('kp_claim_signup_referrer_v31',{p_inviter:candidate.nick});
+        if(error)throw error;
+        if(!data?.ok)throw new Error('Приглашение не сохранилось');
+        const fresh=(await get(userRef(currentNick))).val();
+        if(fresh){allUsersCache[currentNick]=fresh;window.allUsersCache=allUsersCache;updateHeader(fresh);}
+        const repair=qs('inviterRepairWrap');if(repair)repair.hidden=true;
+        toast('Пригласивший сохранён. Теперь вы учитываетесь в его статистике.','green');
+    }catch(error){
+        console.error('[signup referral recovery]',error);
+        toast('Не удалось записать приглашение: '+(error.message||'ошибка сервера'),'red');
+    }
 };
 let savingsMoveBusy=false;
 async function moveSavings(direction){
@@ -4923,8 +5002,26 @@ async function getAccountTransactions(force=false){
     if(!force&&_accountTransactionsCache&&Date.now()-_accountTransactionsAt<3000) return _accountTransactionsCache;
     if(_accountTransactionsRequest) return _accountTransactionsRequest;
     _accountTransactionsRequest=(async()=>{
-        const {data,error}=await supabase.rpc('kp_my_transactions');
-        if(error) throw error;
+        let data,error;
+        // Reading the ledger is idempotent. Retry one transient network
+        // failure, common after a laptop resumes from sleep or changes VPN.
+        for(let attempt=0;attempt<2;attempt++){
+            try{
+                ({data,error}=await supabase.rpc('kp_my_transactions'));
+                if(!error)break;
+                if(!/fetch|network|timeout|failed to connect/i.test(error.message||''))break;
+            }catch(e){error=e;}
+            if(attempt===0)await new Promise(resolve=>setTimeout(resolve,500));
+        }
+        if(error){
+            const isNetwork=/fetch|network|timeout|failed to connect/i.test(error.message||'');
+            if(isNetwork){
+                throw new Error(location.protocol==='file:'
+                    ? 'Сайт открыт как локальный файл. Для банковской истории откройте https://iamskoup.github.io/kapani/ и войдите в аккаунт.'
+                    : 'Нет соединения с банковским сервером. Проверьте интернет или VPN и нажмите «Повторить».');
+            }
+            throw error;
+        }
         if(!Array.isArray(data)) throw new Error('Банк вернул неправильный формат истории');
         _accountTransactionsCache=data;
         _accountTransactionsAt=Date.now();
@@ -4936,7 +5033,16 @@ async function renderRecentTransfers(){
     const el=qs('txHistory');if(!el)return;
     let arr;
     try {arr=(await getAccountTransactions()).slice().sort((a,b)=>String(b.ts||'').localeCompare(String(a.ts||''))).slice(0,5);}
-    catch(e){console.error('[bank history]',e);el.textContent='Не удалось загрузить историю: '+(e.message||e);return;}
+    catch(e){
+        console.error('[bank history]',e);
+        el.replaceChildren();
+        const notice=document.createElement('div');notice.style.cssText='font-size:13px;color:var(--muted);line-height:1.55;';
+        notice.textContent='Не удалось загрузить историю: '+(e.message||e);
+        const retry=document.createElement('button');retry.type='button';retry.className='btn btn-ghost btn-sm';
+        retry.style.marginTop='10px';retry.textContent='Повторить';
+        retry.addEventListener('click',()=>{_accountTransactionsCache=null;void renderRecentTransfers();});
+        el.append(notice,retry);return;
+    }
     el.innerHTML=arr.length===0?'<div style="color:var(--muted);font-size:13px;">Нет операций</div>':arr.map(tx=>{
         const info=describeAccountTransaction(tx);
         const title=[info.desc,info.who].filter(Boolean).map(escHtml).join(' · ');
@@ -7334,7 +7440,22 @@ window.adminSetMigrant = async function(on){
         toast('❌ Не удалось обновить роль','red');
     }
 };
-window.adminDeleteOrder=async function(id){await remove(orderRef(id));toast('🗑 Удалено','gold');};
+window.adminDeleteOrder=async function(id){
+    if(currentNick!==ADMIN)return toast('Удалять заказы может только мэр','red');
+    if(!id||!confirm('Удалить этот заказ? Если оплата ещё зарезервирована, она вернётся клиенту.'))return;
+    try{
+        const {data,error}=await supabase.rpc('kp_mayor_delete_order_v31',{p_id:id});
+        if(error)throw error;
+        if(!data?.ok)throw new Error('Заказ не был удалён');
+        const amount=Number(data.refunded||0);
+        toast(amount>0?`Заказ удалён, ${amount.toLocaleString('ru-RU')} ₽ возвращено клиенту`:'Заказ удалён','green');
+        const orders=await get(ref(db,'orders'));
+        renderAdminOrders(orders.val()||{});
+    }catch(e){
+        console.error('[mayor delete order]',e);
+        toast('Не удалось удалить заказ: '+(e.message||'ошибка сервера'),'red');
+    }
+};
 window.adminFireWorker=async function(){
     if(currentNick !== ADMIN) return toast('🚫 Только мэр','red');
     const target=qs('adminTarget')?.value;

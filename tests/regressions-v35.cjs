@@ -29,7 +29,7 @@ assert.match(sql,/exists\(select 1 from public\.kp_profiles/,'only actual regist
 assert.match(sql,/next_week<current_week/,'current week is not paid prematurely');
 assert.match(sql,/revoke all on function public\.kp_advertiser_weekly_salary_v30\(\)/);
 assert.ok(installer.includes(sql.trim()),'full installer contains the exact new migration');
-assert.match(index,/kapani-main-classic\.js\?v=35/);
-assert.match(worker,/kapani-static-v35/);
+assert.match(index,/kapani-main-classic\.js\?v=36/);
+assert.match(worker,/kapani-static-v36/);
 
 console.log('OK: guarded scooter approval and weekly advertiser salary contracts.');
