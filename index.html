@@ -2864,7 +2864,7 @@ window.kapaniLoadLeaflet = (function(){
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8" defer></script>
 <script src="./assets/supabase-bridge-classic.js?v=17&amp;rev=27" defer></script>
 <script src="./assets/kapani-onboarding.js?v=33" defer></script>
-<script src="./assets/kapani-main-classic.js?v=32" defer></script>
+<script src="./assets/kapani-main-classic.js?v=35" defer></script>
 
 <script>
 // ═══════════════════════════════════════════════════
@@ -3462,18 +3462,21 @@ window.kapaniLoadLeaflet = (function(){
         if(!freshSnap.exists()) return toast('❌ Пользователь не найден','red');
         const freshUser=freshSnap.val()||{};
         if((freshUser.scooterLicenseApplication||{}).status!=='pending') return toast('⚠️ Заявка уже обработана','gold');
-        const result=await runTransaction(userRef(nick),u=>{
-          const base=(u==null)?freshUser:u; const app=base.scooterLicenseApplication||{};
-          if(app.status!=='pending') return;
-          const now=Date.now(); const next={...base,scooterLicenseApplication:{...app,status:approve?'approved':'rejected',reviewedAt:now,reviewedBy:ADMIN}};
-          if(approve) next.licenses={...(base.licenses||{}),scooter:true,scooterIssuedAt:now};
-          return next;
-        });
-        if(!result?.committed){ const after=(await get(userRef(nick))).val()||{}; const st=after.scooterLicenseApplication?.status; return toast(st&&st!=='pending'?'⚠️ Заявка уже обработана':'❌ Не удалось обработать заявку. Попробуйте ещё раз','red'); }
-        await pushNotification(nick,approve?'🛵 Права на скутер одобрены мэрией.':'❌ Мэрия отказала в выдаче прав на скутер. Деньги не возвращаются.','system');
+        // The old Firebase-style transaction replaces another user's entire
+        // protected record and is correctly rejected by Supabase. Modern
+        // applications use the civic RPC; old exam applications have their
+        // own mayor-only atomic review RPC.
+        const app=freshUser.scooterLicenseApplication;
+        const modern=app.kind==='scooter' && typeof app.id==='string' && app.id.length>=8;
+        const client=window.KAPANI_BRIDGE?.supabase;
+        if(!client)throw new Error('Соединение с сервером ещё не готово');
+        const {error}=modern
+          ? await client.rpc('kp_civic_v8',{p_action:approve?'approve':'reject',p_kind:'scooter',p_id:app.id})
+          : await client.rpc('kp_mayor_review_scooter_legacy',{p_target:nick,p_approve:approve});
+        if(error)throw error;
         toast(approve?'✅ Права выданы':'❌ В выдаче прав отказано',approve?'green':'red');
-        renderAdminScooterApplications(); renderRightsCard();
-      }catch(e){ console.error('[kapaniReviewScooter]',e); toast('❌ Не удалось обработать заявку: '+(e?.message||'ошибка Firebase'),'red'); }
+        await renderAdminScooterApplications(); await renderRightsCard();
+      }catch(e){ console.error('[kapaniReviewScooter]',e); toast('❌ Не удалось обработать заявку: '+(e?.message||'ошибка сервера'),'red'); }
       finally{ delete _scooterReviewBusy[nick]; }
     };
 

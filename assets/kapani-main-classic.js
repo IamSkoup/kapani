@@ -1433,98 +1433,21 @@ async function clearAdvertiserReferralStats(){
 window.getAdvertiserReferralCount=getAdvertiserReferralCount;
 window.clearAdvertiserReferralStats=clearAdvertiserReferralStats;
 
-async function processAdvertiserWeeklySalary(nick, uSnapshot){
-    // В текущих RPC нет защищённой выплаты рекламщику.
-    // Считать приглашения можно, но выдавать деньги браузером нельзя.
-    return uSnapshot || null;
-    if(!nick) return null;
-    const userSnap = uSnapshot ? { val:()=>uSnapshot, exists:()=>true } : await get(userRef(nick));
-    if(!userSnap.exists()) return null;
-    const u = userSnap.val() || {};
-    if(!hasMunicipalJob(u, JOB_ADVERTISER)) return u;
-
-    const currentWeek = advertiserWeekKey();
-    let paidThrough = String(u.advertiserSalaryPaidThroughWeek || '').trim();
-    if(!paidThrough){
-        await update(userRef(nick), { advertiserSalaryPaidThroughWeek: currentWeek, advertiserStartedWeek: u.advertiserStartedWeek || currentWeek });
-        return { ...u, advertiserSalaryPaidThroughWeek: currentWeek, advertiserStartedWeek: u.advertiserStartedWeek || currentWeek };
-    }
-    if(paidThrough >= currentWeek) return u;
-
-    const completedWeeks=[];
-    let cursor = shiftAdvertiserWeekKey(paidThrough, 1);
-    let guard=0;
-    while(cursor && cursor < currentWeek && guard++ < 104){
-        completedWeeks.push(cursor);
-        cursor = shiftAdvertiserWeekKey(cursor, 1);
-    }
-    if(!completedWeeks.length) return u;
-
-    let allUsers = {};
-    try{
-        const allUsersSnap = await get(ref(db,'users'));
-        allUsers = allUsersSnap.val() || {};
-    }catch(e){
-        console.warn('[advertiser weekly users read]', nick, e);
-        return null;
-    }
-
-    const weekRows = await Promise.all(completedWeeks.map(async week => {
-        try{
-            const referrals = {};
-            Object.entries(allUsers).forEach(([userNick,user])=>{
-                if(!user || userNick===nick) return;
-                if(String(user.invitedBy||'') !== nick) return;
-                if(String(user.referralWeekKey||'') !== week) return;
-                referrals[userNick] = { nick:userNick, displayName:displayNick(user) || userNick, createdAt:Number(user.referralCreatedAt||user.createdAt||0) };
-            });
-            const count = Object.keys(referrals).length;
-            // Persist the weekly aggregate under the advertiser's own user record.
-            try{
-                await set(ref(db, `users/${nick}/advertiserWeekly/${week}/count`), count);
-                await set(ref(db, `users/${nick}/advertiserWeekly/${week}/referrals`), referrals);
-            }catch(writeErr){
-                console.warn('[advertiser weekly aggregate write]', nick, week, writeErr);
-            }
-            const payout = count >= ADVERTISER_WEEKLY_MIN_REFERRALS
-                ? ADVERTISER_WEEKLY_BASE_SALARY + Math.max(0, count - ADVERTISER_WEEKLY_MIN_REFERRALS) * ADVERTISER_EXTRA_REFERRAL_BONUS
-                : 0;
-            return { week, count, payout };
-        }catch(e){
-            console.warn('[advertiser weekly calculate]', nick, week, e);
-            return { week, count:0, payout:0, readError:true };
-        }
-    }));
-    if(weekRows.some(row=>row.readError)) return null;
-    const totalPayout = weekRows.reduce((sum,row)=>sum + Number(row.payout||0), 0);
-
-    const tx = await runTransaction(userRef(nick), current => {
-        if(!current || !hasMunicipalJob(current, JOB_ADVERTISER)) return;
-        if(String(current.advertiserSalaryPaidThroughWeek || '').trim() !== paidThrough) return;
-        const currentBalance = parseMoneyValue(current.balance, 0);
-        if(totalPayout <= 0){
-            return { ...current, advertiserSalaryPaidThroughWeek: currentWeek };
-        }
-        return {
-            ...current,
-            balance: currentBalance + totalPayout,
-            advertiserSalaryPaidThroughWeek: currentWeek,
-            totalEarned: parseMoneyValue(current.totalEarned, 0) + totalPayout
-        };
-    });
-    if(!tx?.committed) return null;
-
-    for(const row of weekRows){
-        try{
-            if(row.payout > 0){
-                await logTx(nick,{type:'in',who:'Мэрия',amt:row.payout,desc:`Зарплата рекламщика за неделю ${row.week}: ${row.count} приглашённых`});
-                await pushNotification(nick, `📢 Зарплата рекламщика: +${row.payout.toLocaleString('ru-RU')} ₽ за неделю ${row.week}. Приглашено: ${row.count}`, 'money');
-            }else{
-                await pushNotification(nick, `📢 Итог недели ${row.week}: приглашено ${row.count}. Нужно минимум 4 — зарплата за эту неделю не начислена.`, 'system');
-            }
-        }catch(e){ console.warn('[advertiser weekly payout log/notification]', nick, row.week, e); }
-    }
-    return tx.snapshot?.val?.() || { ...u, advertiserSalaryPaidThroughWeek: currentWeek, balance: parseMoneyValue(u.balance,0)+totalPayout };
+let advertiserPayrollPromise=null;
+let advertiserPayrollPromiseNick=null;
+let advertiserPayrollAutoKey='';
+async function processAdvertiserWeeklySalary(nick,uSnapshot){
+    if(!nick || nick!==currentNick || !hasMunicipalJob(uSnapshot||allUsersCache[nick]||{},JOB_ADVERTISER)) return null;
+    if(advertiserPayrollPromise && advertiserPayrollPromiseNick===nick)return advertiserPayrollPromise;
+    const request=(async()=>{
+        const {data,error}=await supabase.rpc('kp_advertiser_weekly_salary_v30');
+        if(error)throw error;
+        return data;
+    })();
+    advertiserPayrollPromise=request;
+    advertiserPayrollPromiseNick=nick;
+    try{return await request;}
+    finally{if(advertiserPayrollPromise===request){advertiserPayrollPromise=null;advertiserPayrollPromiseNick=null;}}
 }
 window.JOB_ADVERTISER = JOB_ADVERTISER;
 window.ADVERTISER_KVE_REQUIRED = ADVERTISER_KVE_REQUIRED;
@@ -2005,6 +1928,15 @@ function attachUserListener(){
         if(curPage==='subscription' && typeof renderSubscription==='function') renderSubscription();
         if(curPage==='kveExam') renderKveSection(u);
         if(curPage==='jobs') renderKveSection(u);
+        if(hasMunicipalJob(u,JOB_ADVERTISER)){
+            const payrollKey=currentNick+':'+advertiserWeekKey();
+            if(advertiserPayrollAutoKey!==payrollKey){
+                advertiserPayrollAutoKey=payrollKey;
+                void processAdvertiserWeeklySalary(currentNick,u).catch(e=>{
+                    console.warn('[advertiser weekly salary]',e);
+                });
+            }
+        }
         const kveBtn=qs('bn11'); if(kveBtn) kveBtn.style.display='flex';
         const kveHomeSub=qs('kveHomeSub');
         if(kveHomeSub){
@@ -6988,8 +6920,17 @@ async function renderAdvertiserWorkStats(){
     const host=qs('jobsAdvertiserStats'); if(!host||!currentNick) return;
     const u=allUsersCache[currentNick]||{}; if(!hasMunicipalJob(u,JOB_ADVERTISER)){host.style.display='none';return;}
     host.style.display='block';
-    const count=await getAdvertiserReferralCount(currentNick);
-    host.innerHTML=`<div class="card" style="border-color:rgba(240,68,74,.3);background:rgba(240,68,74,.04);"><div class="card-title" style="color:var(--primary);">📢 Результат работы рекламщика</div><div style="font-size:22px;font-weight:900;color:var(--primary);">Приглашено пользователей: ${count}</div></div>`;
+    host.textContent='Проверяем приглашения и зарплату…';
+    const nick=currentNick;
+    try{
+        const data=await processAdvertiserWeeklySalary(nick,u);
+        if(nick!==currentNick || !data?.active)return;
+        const count=Number(data.referrals||0),projected=Number(data.projected||0),paid=Number(data.paid||0);
+        host.innerHTML=`<div class="card" style="border-color:rgba(240,68,74,.3);background:rgba(240,68,74,.04);"><div class="card-title" style="color:var(--primary);">Результат работы рекламщика</div><div style="font-size:22px;font-weight:900;color:var(--primary);">За неделю: ${count} из 4 приглашённых</div><div style="font-size:13px;margin-top:8px;">${count<4?`До нормы осталось: ${4-count}`:'Норма выполнена'} · Прогноз выплаты: <b>${projected.toLocaleString('ru-RU')} ₽</b></div><div style="font-size:12px;color:var(--muted);margin-top:6px;">3 900 ₽ за 4 новых пользователей + 500 ₽ за каждого следующего. Расчёт после завершения недели.</div>${paid>0?`<div style="font-size:12px;margin-top:8px;color:var(--primary);">Начислено за завершённые недели: +${paid.toLocaleString('ru-RU')} ₽</div>`:''}</div>`;
+    }catch(e){
+        console.warn('[advertiser work salary]',e);
+        host.textContent='Не удалось проверить начисление: '+(e?.message||'ошибка сервера');
+    }
 }
 async function renderAdminAdvertiserStats(){
     const host=qs('adminAdvertiserStats'); if(!host) return;
@@ -14445,10 +14386,9 @@ document.querySelectorAll('a,button').forEach(el=>{if(el.textContent.trim().incl
 // Jobs retain their original application flow, with readable vacancy cards.
 const jobs=[['Водитель','Поездки по Капани','Забирайте пассажира в отмеченной точке, делитесь местоположением и завершайте поездку.','250 ₽ / км',60],['Доставщик','Доставка покупок','Забирайте товары бизнеса и покупки с маркетплейса. Получайте оплату после подтверждения получения.','200 ₽ / км',53],['Уборщик','Чистота посёлка','Убирайте площадку и отправляйте фотоотчёт на проверку мэрии.','1 700 ₽ / неделю',40],['Журналист','Новости Капани','Публикуйте проверенные новости и рассказывайте о жизни посёлка.','2 800 ₽ / неделю',71],['Полицейский','Порядок и помощь','Принимайте вызовы, проверяйте документы в рамках полномочий.','3 400 ₽ / неделю',80],['КСБ','Служба безопасности','Работайте с обращениями, документами и обоснованными штрафами.','4 000 ₽ / неделю',90],['Депутат','Развитие посёлка','Готовьте предложения и передавайте их на рассмотрение мэрии.','5 000 ₽ / неделю',95],['Врач','Больница Капани','Настраивайте услуги и расписание, принимайте пациентов.','Оплата приёмов',90],['Рекламщик','Сообщество Капани','Привлекайте новых жителей. Засчитываются подтверждённые приглашения.','3 900 ₽ / неделю + премия',50]];
 const jobsPage=qs('jobs');if(jobsPage){const old=[...jobsPage.querySelectorAll('.card')].find(c=>c.textContent.includes('О профессиях'));const host=old||document.createElement('section');host.className='card v8-job-descriptions';host.innerHTML='<h3>О профессиях</h3><p class="v8-muted">Выберите профессию, чтобы узнать об обязанностях, оплате и балле КВЭ.</p><div class="v8-profession-picker">'+jobs.map(([name],i)=>`<button type="button" class="btn btn-ghost" aria-expanded="false" aria-controls="v8ProfessionInfo" onclick="kpDescribeJob(${i})">${name}</button>`).join('')+'</div><div id="v8ProfessionInfo" class="v8-job-info" aria-live="polite"><div><article id="v8ProfessionBody"></article></div></div>';if(!old)qs('jSel').closest('.card').after(host);}
-jobs[8][3]='Начисление пока не подключено к защищённому серверу';
 const jobDisclaimer=document.createElement('p');
 jobDisclaimer.className='v8-muted';
-jobDisclaimer.textContent='Указанные ставки профессий не равны начислению. Деньги поступают только после подтверждённой сервером операции. Автовыплата рекламщику пока отключена.';
+jobDisclaimer.textContent='Зарплата рекламщика начисляется сервером за завершённую неделю, если приглашено хотя бы четыре новых пользователя.';
 jobsPage?.querySelector('.v8-job-descriptions')?.append(jobDisclaimer);
 let describedJob=-1;
 window.kpDescribeJob=i=>{const panel=qs('v8ProfessionInfo'),close=describedJob===i;describedJob=close?-1:i;document.querySelectorAll('.v8-profession-picker button').forEach((b,n)=>{b.classList.toggle('selected',!close&&n===i);b.setAttribute('aria-expanded',String(!close&&n===i));});if(!close){const [name,tag,desc,salary,kve]=jobs[i];qs('v8ProfessionBody').innerHTML=`<div class="v8-eyebrow">${tag}</div><h3>${name}</h3><p>${desc}</p><div class="v8-profession-facts"><div><small>Оплата</small><strong>${salary}</strong></div><div><small>Требуемый балл КВЭ</small><strong>${kve} и выше</strong></div></div>`;}panel.classList.toggle('open',!close);};

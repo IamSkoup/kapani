@@ -53,7 +53,9 @@ test('0.3% savings supported exclusively by server', main.includes("return '+0,3
   main.includes("supabase.rpc('kp_savings_accrue_v14')") &&
   savingsAndProfile.includes('savings*0.003+carry'));
 test('no unprotected business recurring fee', main.includes('В защищённой экономике нет RPC для этого взноса'));
-test('no client-side advertising salary payout', main.includes('В текущих RPC нет защищённой выплаты рекламщику'));
+test('advertiser salary uses protected server payout', main.includes("supabase.rpc('kp_advertiser_weekly_salary_v30')") &&
+  sql.includes("function public.kp_advertiser_weekly_salary_v30()") &&
+  !main.includes("runTransaction(userRef(nick), current =>"));
 test('private license role', sql.includes("raise exception 'Private licence data'"));
 test('rental has idempotent request table', sql.includes('public.kp_v8_rental_ops'));
 test('rental withdrawal uses protected money function', sql.includes("p_id,'rental_payment'"));
