@@ -24,15 +24,29 @@
     const home=doc.getElementById('home');if(home)home.classList.remove('active');
     const page=doc.getElementById('deliveryOrderPage');if(page)page.classList.add('active');
     try{
-      // Only mutate in-memory caches in this isolated iframe. No test account,
-      // marketplace writes, payments or deliveries are created.
-      win.eval(`lastMarketListings=Object.fromEntries(Array.from({length:1000},(_,n)=>[String(n),{
-        id:String(n),title:'Товар '+(n+1),seller:'Продавец',category:'other',status:'active',
-        price:500+n,createdAt:1000+n
-      }]));allBusinessesCache={test:{name:'Тестовый магазин',status:'active',delivery:true,
-        lat:52,lng:39,products:{one:{name:'Тестовый товар',price:100}}}};`);
-      await win.renderDeliveryOrderOptions();
-      status.textContent='Форма вверху, каталог ниже';
+      // Exercise the exact production catalogue renderer and real site CSS.
+      // The site normally requires Supabase auth; here data is injected only
+      // into a local renderer sandbox, never into the account or database.
+      const listings=Array.from({length:1000},(_,n)=>({
+        id:String(n),title:'Товар '+(n+1),seller:'Продавец',category:'other',
+        status:'active',price:500+n,createdAt:1000+n
+      }));
+      const script=await (await fetch('../assets/kapani-main-classic.js?v=38',{cache:'no-store'})).text();
+      const start=script.indexOf('const deliveryCatalogView=');
+      const end=script.indexOf('window.kpDeliveryRequestListing=',start);
+      if(start<0||end<0)throw Error('Не найден код каталога');
+      const escape=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const makeButton=(title,handler)=>`<button type="button" class="btn btn-ghost btn-sm" onclick="${handler}">${title}</button>`;
+      const run=new Function('qs','deliveryMarketplaceOptions','html','escHtml','jsEsc','money','button',
+        `let renderDeliveryOrderOptions;const window={renderDeliveryOrderOptions:async()=>{}};${script.slice(start,end)};
+         return {render:window.renderDeliveryOrderOptions,filter:window.kpDeliveryCatalogFilter,page:window.kpDeliveryCatalogPage}`);
+      const actions=run(id=>doc.getElementById(id),()=>listings,escape,escape,escape,v=>v+' ₽',makeButton);
+      win.kpDeliveryCatalogFilter=actions.filter;
+      win.kpDeliveryCatalogPage=actions.page;
+      win.kpDeliveryForListing=()=>{};
+      win.kpDeliveryRequestListing=()=>{};
+      await actions.render();
+      status.textContent='Форма первая, каталог снизу, 8 товаров на страницу';
     }catch(e){status.textContent='Ошибка: '+e.message;}
   });
 </script>
