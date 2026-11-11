@@ -38,7 +38,7 @@
       const escape=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const makeButton=(title,handler)=>`<button type="button" class="btn btn-ghost btn-sm" onclick="${handler}">${title}</button>`;
       const run=new Function('qs','deliveryMarketplaceOptions','html','escHtml','jsEsc','money','button',
-        `let renderDeliveryOrderOptions;const window={renderDeliveryOrderOptions:async()=>{}};${script.slice(start,end)};
+        `let renderDeliveryOrderOptions;const window={renderDeliveryOrderOptions:async()=>{}};const optionsV7=window.renderDeliveryOrderOptions;${script.slice(start,end)};
          return {render:window.renderDeliveryOrderOptions,filter:window.kpDeliveryCatalogFilter,page:window.kpDeliveryCatalogPage}`);
       const actions=run(id=>doc.getElementById(id),()=>listings,escape,escape,escape,v=>v+' ₽',makeButton);
       win.kpDeliveryCatalogFilter=actions.filter;

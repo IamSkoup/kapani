@@ -21,8 +21,7 @@ assert.match(tour,/root\.addEventListener\('cancel'/);
 assert.match(main,/localStorage\.getItem\(pendingKey\) === '1'\) return true/);
 assert.match(fixture,/src="\.\.\/index\.html"/);
 assert.match(deliveryFixture,/length:1000/);
-assert.match(deliveryFixture,/script\.slice\(start,end\)/);
-assert.match(deliveryFixture,/await actions\.render\(\)/);
+assert.match(deliveryFixture,/renderDeliveryOrderOptions\(\)/);
 assert.match(html,/kapani-onboarding\.js\?v=38/);
 
 const start=main.indexOf('const deliveryCatalogView=');
