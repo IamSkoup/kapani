@@ -153,8 +153,12 @@ html.v8-reduce-motion .kp-tour-stage, html.v8-reduce-motion .kp-tour-next, html.
 .kp-tour-overlay {
   position: fixed !important;
   inset: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
+  margin: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border: 0 !important;
   z-index: 12050 !important;
   display: block !important;
   padding: 0 !important;
@@ -166,6 +170,8 @@ html.v8-reduce-motion .kp-tour-stage, html.v8-reduce-motion .kp-tour-next, html.
   touch-action: auto;
   animation: kpTourReveal .35s ease both;
 }
+.kp-tour-overlay::backdrop { background: transparent !important; }
+.kp-tour-overlay:not([open]) { display: none !important; }
 .kp-tour-overlay::before { display: none !important; }
 .kp-tour-shade {
   display: none !important;
@@ -185,6 +191,8 @@ html.v8-reduce-motion .kp-tour-stage, html.v8-reduce-motion .kp-tour-next, html.
 }
 .kp-tour-bubble {
   position: absolute;
+  top: max(10px, calc(50% - 140px));
+  left: max(10px, calc(50% - 190px));
   z-index: 4;
   box-sizing: border-box;
   width: min(380px, calc(100vw - 20px));

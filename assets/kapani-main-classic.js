@@ -1706,11 +1706,14 @@ function needsFirstVisitTour(profile) {
     if (!currentNick) return false;
     const doneKey = `kp_first_visit_done_${currentNick}`;
     const pendingKey = `kp_first_visit_pending_${currentNick}`;
-    try { if (localStorage.getItem(doneKey) === '1') return false; } catch (_) {}
     const serverState = profile?.settings?.firstVisitTour;
-    if (serverState?.completed === true) return false;
+    // New registrations must win over an old device's completed-tour flag.
+    // A nickname can be reused after account deletion and recreation.
+    try { if (localStorage.getItem(pendingKey) === '1') return true; } catch (_) {}
     if (serverState?.version === 1 && serverState.completed === false) return true;
-    try { return localStorage.getItem(pendingKey) === '1'; } catch (_) { return false; }
+    if (serverState?.completed === true) return false;
+    try { if (localStorage.getItem(doneKey) === '1') return false; } catch (_) {}
+    return false;
 }
 
 function finishFirstVisitTour(nick) {
@@ -14650,7 +14653,49 @@ deliveryMarketplaceOptions=()=>Object.entries(lastMarketListings||{}).map(([id,l
   l.status==='active'||(l.buyer===currentNick&&['meeting_requested','meeting_confirmed','sold'].includes(l.status))
 )).sort((a,b)=>Number(b.pinnedUntil||0)-Number(a.pinnedUntil||0)||Number(b.createdAt||0)-Number(a.createdAt||0));
 const optionsV7=window.renderDeliveryOrderOptions;
-window.renderDeliveryOrderOptions=renderDeliveryOrderOptions=async function(force=false){await optionsV7(force);let host=qs('v8DeliveryCatalog');if(!host){host=document.createElement('div');host.id='v8DeliveryCatalog';qs('deliveryOrderPage')?.prepend(host);}if(!host)return;const businesses=deliveryBusinessOptions();const listings=deliveryMarketplaceOptions();host.innerHTML=`<div class="v8-delivery-hero"><span class="v8-eyebrow">Капани рядом</span><h2>Всё нужное —<br>к вашей двери</h2><p>Выберите магазин или товар с маркетплейса.<br>Доставка — 200 ₽ за километр.</p></div><h3>Бизнесы с доставкой</h3><div class="v8-business-grid">${businesses.map(b=>`<button class="v8-business" onclick="kpDeliveryBusiness('${jsEsc(b.id)}')"><img src="${html(b.banner?safeURL(b.banner):'assets/delivery-forest.webp')}" alt="" loading="lazy"><span><b>${html(b.name)}</b><small>${html(b.category||'Товары и услуги')} · ${Object.keys(b.products||{}).length} товаров</small></span></button>`).join('')||'<p class="v8-empty">Пока нет бизнесов с доставкой и точкой на карте.</p>'}</div><h3>Товары с маркетплейса</h3><p class="v8-muted">Новые объявления видны сразу. Для доставки сначала договоритесь с продавцом и оплатите товар после его подтверждения.</p><div class="v8-purchased">${listings.map(l=>`<div class="v8-listing-delivery"><button class="btn btn-ghost" onclick="kpDeliveryForListing('${jsEsc(l.id)}')">${html(l.title)} · ${l.priceNegotiable?'цена договорная':money(l.price)} <small>${l.status==='sold'?'Куплено — можно доставить':l.status==='meeting_requested'?'Ожидает продавца':l.status==='meeting_confirmed'?'Продавец согласен — оплатите':'Продаётся'}</small></button>${l.status==='active'?button('Договориться',`kpDeliveryRequestListing('${jsEsc(l.id)}')`,'btn btn-ghost btn-sm'):''}</div>`).join('')||'<p class="v8-muted">Физических товаров пока нет. Объявления об услугах и работе нельзя доставить.</p>'}</div>`;};
+const deliveryCatalogView={query:'',page:0,pageSize:8};
+function paintDeliveryMarketplaceDirectory(){
+  const results=qs('v8DeliveryCatalogItems'),pagination=qs('v8DeliveryCatalogPages');
+  if(!results||!pagination)return;
+  const query=deliveryCatalogView.query.trim().toLocaleLowerCase('ru');
+  const listings=deliveryMarketplaceOptions().filter(l=>!query||`${l.title||''} ${l.seller||''}`.toLocaleLowerCase('ru').includes(query));
+  const pages=Math.max(1,Math.ceil(listings.length/deliveryCatalogView.pageSize));
+  deliveryCatalogView.page=Math.min(deliveryCatalogView.page,pages-1);
+  const offset=deliveryCatalogView.page*deliveryCatalogView.pageSize;
+  results.innerHTML=listings.slice(offset,offset+deliveryCatalogView.pageSize).map(l=>`
+    <div class="v8-listing-delivery">
+      <div class="v8-listing-delivery-name"><b>${html(l.title||'Объявление')}</b><small>${l.priceNegotiable?'Цена договорная':money(l.price)} · ${html(l.seller||'Продавец')}</small></div>
+      <button class="btn btn-ghost btn-sm" onclick="kpDeliveryForListing('${jsEsc(l.id)}')">Выбрать</button>
+      ${l.status==='active'?button('Договориться',`kpDeliveryRequestListing('${jsEsc(l.id)}')`,'btn btn-ghost btn-sm'):''}
+    </div>`).join('')||'<p class="v8-muted">По этому запросу товаров нет.</p>';
+  pagination.innerHTML=listings.length>deliveryCatalogView.pageSize
+    ? `<button type="button" class="btn btn-ghost btn-sm" onclick="kpDeliveryCatalogPage(-1)" ${deliveryCatalogView.page===0?'disabled':''}>Назад</button><span>${deliveryCatalogView.page+1} из ${pages}</span><button type="button" class="btn btn-ghost btn-sm" onclick="kpDeliveryCatalogPage(1)" ${deliveryCatalogView.page===pages-1?'disabled':''}>Дальше</button>`
+    : `<span>Найдено объявлений: ${listings.length}</span>`;
+}
+window.kpDeliveryCatalogFilter=query=>{deliveryCatalogView.query=String(query||'');deliveryCatalogView.page=0;paintDeliveryMarketplaceDirectory();};
+window.kpDeliveryCatalogPage=delta=>{deliveryCatalogView.page=Math.max(0,deliveryCatalogView.page+delta);paintDeliveryMarketplaceDirectory();};
+window.renderDeliveryOrderOptions=renderDeliveryOrderOptions=async function(force=false){
+  await optionsV7(force);
+  const page=qs('deliveryOrderPage');if(!page)return;
+  let host=qs('v8DeliveryCatalog');
+  if(!host){host=document.createElement('div');host.id='v8DeliveryCatalog';}
+  // The order form stays first: a thousand listings must never push it away.
+  const orderForm=page.querySelector('.card');
+  if(orderForm&&host.previousElementSibling!==orderForm)orderForm.after(host);
+  else if(!host.isConnected)page.append(host);
+  const wasOpen=host.querySelector('details')?.open||false;
+  const total=deliveryMarketplaceOptions().length;
+  host.innerHTML=`<details class="v8-delivery-directory" ${wasOpen?'open':''}>
+    <summary>Найти товар на маркетплейсе <span>${total} объявлений</span></summary>
+    <div class="v8-delivery-directory-body">
+      <p class="v8-muted">Выберите товар, затем договоритесь с продавцом. Доставка оформляется после оплаты.</p>
+      <label for="v8DeliveryCatalogSearch">Поиск по названию или продавцу</label>
+      <input id="v8DeliveryCatalogSearch" type="search" autocomplete="off" placeholder="Найти объявление…" value="${escHtml(deliveryCatalogView.query)}" oninput="kpDeliveryCatalogFilter(this.value)">
+      <div id="v8DeliveryCatalogItems"></div><div id="v8DeliveryCatalogPages" class="v8-delivery-directory-pages"></div>
+    </div>
+  </details>`;
+  paintDeliveryMarketplaceDirectory();
+};
 window.kpDeliveryRequestListing=id=>window.requestMeeting(id).then(async()=>{await window.renderDeliveryOrderOptions(true);});
 const deliveryBasketByBiz=Object.create(null);
 function deliveryBasketFor(bid){return deliveryBasketByBiz[bid] ||= Object.create(null);}

@@ -3,16 +3,17 @@
  */
 const SW_VERSION = 'kapani-pwa-2026-11-11-v37';
 const KAPANI_APP_PATH = '/kapani/';
-const KAPANI_STATIC_CACHE = 'kapani-static-v37';
+const KAPANI_STATIC_CACHE = 'kapani-static-v38';
 const KAPANI_STATIC_PREFIX = 'kapani-static-';
 const KAPANI_APP_SHELL = [
   './', './index.html', './config.js', './manifest.json',
   './assets/icon-192.png', './assets/icon-512.png',
-  './assets/kapani-main-classic.js?v=37',
+  './assets/kapani-main-classic.js?v=38',
   './assets/supabase-bridge-classic.js?v=17&rev=27',
   './assets/kapani-v28.css?v=28',
-  './assets/kapani-onboarding.js?v=37',
-  './assets/kapani-onboarding.css?v=37',
+  './assets/kapani-onboarding.js?v=38',
+  './assets/kapani-onboarding.css?v=38',
+  './assets/kapani-delivery-directory.css?v=38',
   './assets/kapani-casino-performance.css?v=30'
 ];
 

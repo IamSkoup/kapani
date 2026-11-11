@@ -61,6 +61,7 @@ function harness(width,height,reduced){
     removeEventListener(type){delete this.listeners[type];}
   };
   document.documentElement.appendChild=node=>{document.root=node;};
+  document.body.appendChild=node=>{document.root=node;};
   const window={
     innerWidth:width,innerHeight:height,scrollX:0,scrollY:0,events:{},
     matchMedia:()=>({matches:reduced}),getComputedStyle:()=>({display:'block',visibility:'visible'}),

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Проверка обучения в настоящей вёрстке Капани</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#15271c;color:#e0f6e7;font:14px Arial,sans-serif}
+    header{display:flex;align-items:center;flex-wrap:wrap;gap:14px;padding:8px 14px}
+    button{background:#315840;color:white;border:1px solid #79ad8a;padding:9px;border-radius:8px;cursor:pointer}
+    iframe{display:block;border:1px solid #79ad8a;background:#08180f;max-width:100%;margin:0 auto}
+    #result{font-size:12px}
+  </style>
+</head>
+<body>
+<header><strong>Проверка на реальной странице</strong><span id="size"></span><span id="result">Загрузка…</span><button id="repeat" type="button">Повторить обучение</button></header>
+<iframe id="realApp" title="Настоящая вёрстка Капани" src="../index.html" loading="eager"></iframe>
+<script>
+  const sizes={small:[320,568],phone:[390,844],tablet:[768,900],desktop:[1280,800]};
+  const name=new URLSearchParams(location.search).get('size')||'desktop';
+  const [width,height]=sizes[name]||sizes.desktop;
+  const frame=document.getElementById('realApp');
+  frame.style.width=width+'px';frame.style.height=height+'px';
+  document.getElementById('size').textContent=`${width} × ${height}`;
+  function replay(){
+    const win=frame.contentWindow,doc=frame.contentDocument;
+    if(!win?.kapaniOnboardingStart)return void(document.getElementById('result').textContent='Скрипт обучения не загрузился');
+    const auth=doc.getElementById('authSection');if(auth){auth.style.display='none';auth.classList.remove('active');}
+    const loading=doc.getElementById('loadingOverlay');if(loading)loading.style.display='none';
+    const main=doc.getElementById('mainApp');if(main)main.style.display='block';
+    const header=doc.getElementById('gHeader');if(header)header.style.display='flex';
+    const nav=doc.getElementById('bottomNav');if(nav)nav.style.display='flex';
+    const home=doc.getElementById('home');if(home)home.classList.add('active');
+    const nameSlot=doc.querySelector('#home .hero-name');if(nameSlot)nameSlot.textContent='Тест';
+    const old=doc.getElementById('kpFirstVisitTour');if(old){document.getElementById('result').textContent='Закройте текущий показ';return;}
+    const success=win.kapaniOnboardingStart({onDone:()=>document.getElementById('result').textContent='Обучение закрыто'});
+    document.getElementById('result').textContent=success?'Настоящая страница, окно открыто':'Ошибка запуска';
+  }
+  frame.addEventListener('load',replay);
+  document.getElementById('repeat').addEventListener('click',replay);
+</script>
+</body>
+</html>

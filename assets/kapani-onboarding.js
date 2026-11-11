@@ -31,7 +31,9 @@
     const oldScroll = {x:window.scrollX||0,y:window.scrollY||0};
     let index=0,changing=false,finishing=false,target=null,typing=0,scrollJob=0,frame=0;
 
-    const root=document.createElement('div');
+    // Native modal dialogs render in the browser's top layer, above the
+    // real app's desktop sidebar, transformed cards and other stacking contexts.
+    const root=document.createElement('dialog');
     root.id='kpFirstVisitTour';root.className='kp-tour-overlay';
     root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');root.setAttribute('aria-labelledby','kpTourTitle');
     root.innerHTML=`<div class="kp-tour-shade kp-tour-shade-top" aria-hidden="true"></div>
@@ -90,6 +92,11 @@
       // rectangles left uncovered strips on some desktop scaling settings.
       place(spot,l,t,r-l,b-t);
       const margin=vw<480?10:16,gap=vw<480?15:22,w=bubble.offsetWidth,h=bubble.offsetHeight;
+      if(w<120||h<90){
+        bubble.style.left=Math.max(margin,Math.round((vw-360)/2))+'px';
+        bubble.style.top=Math.max(margin,Math.round(vh*.5-120))+'px';
+        return;
+      }
       const options=[
         {side:'right',x:r+gap,y:(t+b-h)/2,fits:r+gap+w<=vw-margin},
         {side:'left',x:l-w-gap,y:(t+b-h)/2,fits:l-w-gap>=margin},
@@ -153,9 +160,18 @@
       else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
     }
     skip.addEventListener('click',finish);back.addEventListener('click',()=>move(-1));next.addEventListener('click',()=>move(1));
-    // Attach to <html>, outside the app's body/layout rules. On desktop the
-    // body may be clipped, which made this fixed overlay cover only one side.
-    document.documentElement.appendChild(root);document.body.classList.add('kp-tour-open');
+    // showModal() places the tour above every app layer, even when the body
+    // has overflow clipping or the desktop sidebar creates a stacking context.
+    document.body.appendChild(root);
+    try {
+      if(typeof root.showModal==='function') root.showModal();
+      else root.setAttribute('open','');
+    } catch(error) {
+      console.error('[Kapani onboarding] modal unavailable:',error);
+      root.remove();return false;
+    }
+    root.addEventListener('cancel',event=>{event.preventDefault();finish();});
+    document.body.classList.add('kp-tour-open');
     document.addEventListener('keydown',onKeydown,true);window.addEventListener('resize',scheduleLayout);window.addEventListener('scroll',scheduleLayout,true);
     try {
       render();next.focus({preventScroll:true});return true;

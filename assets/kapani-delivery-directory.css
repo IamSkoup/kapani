@@ -1,0 +1,67 @@
+/* Optional catalogue lives after the order form, never above it. */
+#v8DeliveryCatalog { margin: 16px 0 22px; }
+.v8-delivery-directory {
+  overflow: hidden;
+  border: 1px solid var(--border, rgba(156,224,174,.18));
+  border-radius: 18px;
+  background: var(--surface, #10261d);
+}
+.v8-delivery-directory > summary {
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 19px 20px;
+  font-weight: 850;
+  list-style: none;
+}
+.v8-delivery-directory > summary::-webkit-details-marker { display: none; }
+.v8-delivery-directory > summary::before { content: '▸'; color: var(--primary, #79cfa0); }
+.v8-delivery-directory[open] > summary::before { content: '▾'; }
+.v8-delivery-directory > summary > span {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--muted, #a7b8ab);
+  font-size: 12px;
+  font-weight: 600;
+}
+.v8-delivery-directory-body {
+  padding: 0 18px 18px;
+  max-height: min(66dvh, 650px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.v8-delivery-directory-body label {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  margin: 14px 0 7px;
+}
+#v8DeliveryCatalogSearch { margin-bottom: 14px; width: 100%; }
+.v8-listing-delivery {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  border-top: 1px solid var(--border, rgba(156,224,174,.18));
+  padding: 11px 0;
+}
+.v8-listing-delivery-name { flex: 1 1 160px; min-width: 0; }
+.v8-listing-delivery-name b { display: block; overflow-wrap: anywhere; }
+.v8-listing-delivery-name small { display: block; margin-top: 3px; color: var(--muted, #a7b8ab); }
+.v8-listing-delivery .btn { flex: 0 0 auto; width: auto; }
+.v8-delivery-directory-pages {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  padding-top: 14px;
+  color: var(--muted, #a7b8ab);
+  font-size: 12px;
+}
+@media(max-width:480px) {
+  .v8-delivery-directory > summary { padding: 16px 12px; font-size: 13px; }
+  .v8-delivery-directory-body { padding: 0 12px 14px; }
+  .v8-listing-delivery .btn { font-size: 11px; }
+}
