@@ -197,7 +197,7 @@
       ['Работа','jobs'], ['Такси','taxi'], ['Доставка','deliveryOrderPage'],
       ['КВЭ','kveExam'], ['Уборщик','janitorPage'],
       ['KapaniGPT','https://kapanigpt.netlify.app/'],
-      ['Фильмы KapaniPride','https://iamskoup1.github.io/kapanipride/']
+      ['Фильмы KapaniPride','https://iamskoup.github.io/kapanipride']
     ];
     more.addEventListener('click', () => {
       const visible = links.filter(([,id]) => {
