@@ -154,7 +154,8 @@
     const groups = [
       ['Быстрые действия', 'Всё необходимое в посёлке', [0, 1, 2]],
       ['Работа и обучение', 'Профессии, права и экзамены', [3, 6, 7, 8]],
-      ['Жизнь посёлка', 'Жители, здоровье и события', [4, 5, 9, 10, 11]]
+      ['Жизнь посёлка', 'Жители, здоровье и события', [4, 5, 9, 10, 11]],
+      ['Проекты Капани', 'Нейросеть и фильмы', [12, 13]]
     ];
     const host = document.createElement('div');
     host.className = 'service-catalog';
@@ -194,7 +195,9 @@
       ['Задания','tasks'], ['Новости','news'], ['Плюс','subscription'],
       ['Бизнесы','businesses'], ['Здания','rentBuildings'], ['Мероприятия','events'],
       ['Работа','jobs'], ['Такси','taxi'], ['Доставка','deliveryOrderPage'],
-      ['КВЭ','kveExam'], ['Уборщик','janitorPage']
+      ['КВЭ','kveExam'], ['Уборщик','janitorPage'],
+      ['KapaniGPT','https://kapanigpt.netlify.app/'],
+      ['Фильмы KapaniPride','https://kapanipride.kion-simbovich.chatgpt.site/']
     ];
     more.addEventListener('click', () => {
       const visible = links.filter(([,id]) => {
@@ -209,7 +212,11 @@
         const button = document.createElement('button');
         button.type = 'button';
         button.textContent = label;
-        button.addEventListener('click', () => { drawer.hidden = true; window.navTo(id); });
+        button.addEventListener('click', () => {
+          drawer.hidden = true;
+          if (id.startsWith('https://')) window.open(id, '_blank', 'noopener,noreferrer');
+          else window.navTo(id);
+        });
         list.appendChild(button);
       }
       drawer.hidden = false;
