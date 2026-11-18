@@ -50,3 +50,15 @@
 @media (prefers-reduced-motion: reduce) {
   #casino *, #kpV8Sheet .v8-game-stage * { animation: none !important; transition: none !important; }
 }
+
+#casino .v8-game-card img, .v8-game-stage > img {
+  display: block;
+  object-fit: cover;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  background: #10251b;
+}
+#casino .v8-game-card div { padding: .65rem .8rem; }
+#casino .v8-game-card h3 { margin: 0; }
+#casino .v8-game-card:hover img { transform: none; }
+.v8-game-stage.playing > img { animation: none; }

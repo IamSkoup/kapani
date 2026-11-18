@@ -12,7 +12,7 @@ function extract(start,end){
   return main.slice(a,b);
 }
 
-const latest=vm.runInNewContext(extract('function latestMessageFrom(messages){','async function refreshDmPreviewsFromMessages')+'\nlatestMessageFrom');
+const latest=vm.runInNewContext(extract('function latestMessageFrom(messages){','function updateDmConvoMeta')+'\nlatestMessageFrom');
 const records={first:{createdAt:100,text:'Привет',nick:'Кайон2'},removed:{createdAt:250,msgType:'image',nick:'Кайон'}};
 assert.equal(latest(records).msgType,'image');
 delete records.removed;

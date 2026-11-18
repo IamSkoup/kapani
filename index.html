@@ -19,7 +19,7 @@ window.kapaniShowBootError = function(title, detail) {
     heading.style.cssText = 'font-size:24px;margin:0 0 12px';
     heading.textContent = title || 'Не удалось загрузить приложение';
     const explanation = document.createElement('p');
-    explanation.textContent = detail || 'Проверьте подключение к интернету. Данные сайта остаются на Supabase.';
+    explanation.textContent = detail || 'Проверьте подключение к интернету.';
     body.append(heading,explanation);
     notice.appendChild(body);
     document.body.appendChild(notice);
@@ -1232,7 +1232,8 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 <link rel="stylesheet" href="assets/kapani-v28.css?v=28">
 <link rel="stylesheet" href="assets/kapani-onboarding.css?v=38">
 <link rel="stylesheet" href="assets/kapani-delivery-directory.css?v=38">
-<link rel="stylesheet" href="assets/kapani-casino-performance.css?v=30">
+<link rel="stylesheet" href="assets/kapani-casino-performance.css?v=39">
+<link rel="stylesheet" href="assets/kapani-stability.css?v=39">
 </head>
 <body>
 
@@ -1275,6 +1276,7 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
             </div>
             <div style="font-weight:900;font-size:22px;" id="upmNick"></div>
             <div style="color:var(--primary);font-weight:800;font-size:13px;text-transform:uppercase;letter-spacing:.6px;" id="upmJob"></div>
+            <div id="upmDescription" class="resident-description" hidden></div>
             <div class="upm-online" id="upmOnline"><div class="upm-dot"></div><span></span></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;" id="upmStats"></div>
@@ -1332,7 +1334,7 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 
 <!-- HEADER -->
 <div id="gHeader" style="display:none" class="g-header">
-    <button type="button" class="brand-lockup" onclick="navTo('home')" aria-label="Капани — главная"><strong>KAPAN<i>I</i></strong><small>Посёлок со своими правилами</small></button>
+    <button type="button" class="brand-lockup" onclick="navTo('home')" aria-label="Капани — главная"><strong>KAPAN<i>I</i></strong></button>
     <div class="header-links"><button type="button" onclick="navTo('home')">Главная</button><button type="button" onclick="navTo('news')">Новости</button><button type="button" onclick="navTo('bank')">Банк</button><button type="button" id="mayorHeaderBtn" style="display:none" onclick="navTo('adminPage')">Мэрия</button><button type="button" onclick="openInfoModal()">О Капанях</button><button type="button" onclick="window.open('https://kapanigpt.netlify.app/','_blank','noopener,noreferrer')">KapaniGPT</button><button type="button" onclick="window.open('https://iamskoup.github.io/kapanipride','_blank','noopener,noreferrer')">Фильмы KapaniPride</button></div>
     <div class="header-actions"><div class="h-left" onclick="navTo('profile')">
         <div class="avatar-wrap" id="headerAvatarWrap">
@@ -1342,7 +1344,7 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
         <div><div class="h-name" id="hNick">...</div><div class="h-job" id="hJob">Житель</div></div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
-        <div class="h-notify" onclick="navTo('profile')">🔔<span class="h-badge" id="notifyBadge"></span></div>
+        <div class="h-notify" onclick="navTo('profile'); document.getElementById('inboxList')?.scrollIntoView({block:'center'})">🔔<span class="h-badge" id="notifyBadge"></span></div>
         <div class="h-bal"><span id="hBal">0</span> ₽</div>
     </div></div>
 </div>
@@ -1455,7 +1457,6 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
         <div class="hero-person">
             <img class="hero-avatar" id="heroAvatar" src="assets/avatar.svg" alt="Аватар жителя">
             <div class="hero-person-copy">
-                <div class="hero-kicker">Ваш посёлок. Ваши возможности.</div>
                 <div class="hero-welcome">Добро пожаловать,</div>
                 <div class="hero-name" id="heroName">Капани</div>
                 <div class="hero-role" id="heroRole">Житель</div>
@@ -1535,11 +1536,15 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 
 <!-- GAMES LIBRARY -->
 <div id="events" class="section" data-title="Мероприятия">
-  <div class="card" style="background:linear-gradient(145deg,rgba(255,128,106,.08),rgba(248,113,113,.06));border-color:rgba(255,128,106,.25);">
-    <div style="font-family:'Unbounded',sans-serif;font-size:22px;font-weight:900;background:linear-gradient(135deg,var(--gold),var(--red));background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px;">🏁 Мероприятия</div>
-    <div style="font-size:12px;color:var(--muted);">Ежедневные гонки на время — делай ставку и докажи, кто быстрее</div>
+  <div class="event-switch" role="group" aria-label="Вид мероприятий">
+    <button type="button" id="event-races-tab" aria-pressed="true" onclick="kpShowEventTab('races')">Гонки</button>
+    <button type="button" id="event-sport-tab" aria-pressed="false" onclick="kpShowEventTab('sport')">Ставки на спорт</button>
   </div>
-  <div id="eventsGrid"></div>
+  <div id="event-races">
+    <div id="eventsGrid"></div>
+    <button type="button" class="btn btn-ghost" onclick="kpContactMayor()">Написать мэру о гонках</button>
+  </div>
+  <div id="v8Betting" hidden></div>
 </div>
 
 <!-- EVENT DETAIL -->
@@ -2376,6 +2381,7 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
     </div>
     <div class="card"><div class="card-title">🆕 Новые аккаунты (на подтверждение)</div><div id="unverifiedAccounts"><div style="color:var(--muted);font-size:13px;">Нет неподтверждённых аккаунтов</div></div></div>
     <div class="card"><div class="card-title">🧹 Отчёты уборщиков (на проверке)</div><div id="janitorAdminList"><div style="color:var(--muted);font-size:13px;">Нет отчётов</div></div></div>
+    <div class="card"><h3>Недельные выплаты уборщикам</h3><div id="janitorWeeklyPay" role="status"></div></div>
     <div class="card"><div class="card-title">🏪 Заявки на открытие бизнеса</div><div id="adminBizApps"><div style="color:var(--muted);font-size:13px;">Нет заявок</div></div></div>
     <div class="card"><div class="card-title">🗑 Заявки на закрытие бизнеса</div><div id="adminBizDeleteReqs"><div style="color:var(--muted);font-size:13px;">Нет заявок</div></div></div>
     <div class="card"><div class="card-title">💵 Заявки банкомата</div><div id="adminAtmRequests"><div style="color:var(--muted);font-size:13px;">Нет заявок</div></div></div>
@@ -2701,7 +2707,7 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
         <div id="deliveryBusinessMapCard" class="card" style="display:none;margin-top:10px;padding:8px;"><div style="font-size:12px;font-weight:900;margin-bottom:7px;">🗺 Маршрут доставки</div><div id="deliveryBusinessMap" style="width:100%;height:280px;border-radius:12px;overflow:hidden;"></div><div id="deliveryBusinessMapInfo" style="margin-top:8px;font-size:13px;color:var(--muted);"></div></div>
         <div class="total-row" style="margin-top:10px;">
             <span>Стоимость доставки</span>
-            <span class="total-val" style="font-size:16px;">Определяет доставщик</span>
+            <span class="total-val" style="font-size:16px;">После выбора адреса</span>
         </div>
         <button class="btn btn-primary" onclick="placeDeliveryOrder()" style="margin-top:4px;">📤 Разместить заказ на доставку</button>
     </div>
@@ -2870,9 +2876,9 @@ window.kapaniLoadLeaflet = (function(){
 <script src="./config.js"></script>
 <script src="./functions/subscription-config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8" defer></script>
-<script src="./assets/supabase-bridge-classic.js?v=17&amp;rev=27" defer></script>
+<script src="./assets/supabase-bridge-classic.js?v=39" defer></script>
 <script src="./assets/kapani-onboarding.js?v=38" defer></script>
-<script src="./assets/kapani-main-classic.js?v=38" defer></script>
+<script src="./assets/kapani-main-classic.js?v=39" defer></script>
 
 <script>
 // ═══════════════════════════════════════════════════
@@ -3252,7 +3258,7 @@ window.kapaniLoadLeaflet = (function(){
      KAPANI PACK v2 — passport, police, licenses, rentals, fire-fixes
      Self-contained additive module. Uses globals defined above.
      ═════════════════════════════════════════════════════════════════ -->
-<script src="./assets/kapani-pack-classic.js?v=20&amp;rev=27" defer></script>
+<script src="./assets/kapani-pack-classic.js?v=39" defer></script>
 
 
 <!-- ═══════════════════════════════════════════════════════════════════
@@ -3568,11 +3574,11 @@ window.kapaniLoadLeaflet = (function(){
     // Casino: separate balance + exactly Blackjack + ordinary European roulette.
     // ────────────────────────────────────────────────────────────────
     const bjCards=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-    const bjSuits=['♠','♥','♦','♣'];
+    const bjSuits=['♠','▣','♦','♣'];
     function makeDeck(){const d=[];for(const suit of bjSuits)for(const rank of bjCards)d.push({rank,suit});return d;}
     function shuffle(deck){const d=deck.slice();for(let i=d.length-1;i>0;i--){const b=new Uint32Array(1);crypto.getRandomValues(b);const j=b[0]%(i+1);[d[i],d[j]]=[d[j],d[i]];}return d;}
     function handValue(cards){let total=0,aces=0;for(const c of cards){if(c.rank==='A'){total+=11;aces++;}else if(['K','Q','J'].includes(c.rank))total+=10;else total+=Number(c.rank);}while(total>21&&aces>0){total-=10;aces--;}return total;}
-    function renderCards(cards){return (cards||[]).map(c=>`<span style="display:inline-flex;width:48px;height:66px;align-items:center;justify-content:center;background:#fff;color:${['♥','♦'].includes(c.suit)?'#c33':'#111'};border-radius:8px;border:1px solid #ddd;font-weight:900;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,.2);margin-right:5px;">${esc(c.rank)}${esc(c.suit)}</span>`).join('');}
+    function renderCards(cards){return (cards||[]).map(c=>`<span style="display:inline-flex;width:48px;height:66px;align-items:center;justify-content:center;background:#fff;color:${['▣','♦'].includes(c.suit)?'#c33':'#111'};border-radius:8px;border:1px solid #ddd;font-weight:900;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,.2);margin-right:5px;">${esc(c.rank)}${esc(c.suit)}</span>`).join('');}
     // Every casino sub-render (slots/roulette/coinflip/dice/blackjack) used to
     // call getCasinoUser(), which always did its own get(userRef(...)) round
     // trip to Firebase — so opening the casino page, or any single game
@@ -4001,7 +4007,7 @@ window.kapaniLoadLeaflet = (function(){
       const multiplier=VP_PAYOUTS[name]||0;return {name:name||'Нет комбинации',multiplier};
     }
     function renderVideoPokerCards(st){
-      const cards=st?.cards||[];const interactive=st?.phase==='draw';return `<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;margin:10px 0;">${cards.map((c,i)=>{const held=(st.held||[]).includes(i);const red=['♥','♦'].includes(c.suit);return `<button type="button" class="btn btn-ghost" ${(!interactive||window._videoPokerBusy)?'disabled':''} ${interactive?'onclick="kapaniVideoPokerToggleHold('+i+')"':''} style="min-width:0;padding:7px 2px;height:82px;border:${held?'2px solid var(--gold)':'1px solid var(--border)'};background:${held?'rgba(255,128,106,.12)':'#fff'};color:${red?'#c33':'#111'};border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:${held?'0 0 0 2px rgba(255,128,106,.12)':''};"><span style="font-size:22px;font-weight:900;line-height:1;">${esc(c.rank)}</span><span style="font-size:20px;line-height:1;margin-top:5px;">${esc(c.suit)}</span>${held?'<span style="font-size:8px;font-weight:900;color:#9a6700;margin-top:4px;">HOLD</span>':''}</button>`;}).join('')}</div>`;
+      const cards=st?.cards||[];const interactive=st?.phase==='draw';return `<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;margin:10px 0;">${cards.map((c,i)=>{const held=(st.held||[]).includes(i);const red=['▣','♦'].includes(c.suit);return `<button type="button" class="btn btn-ghost" ${(!interactive||window._videoPokerBusy)?'disabled':''} ${interactive?'onclick="kapaniVideoPokerToggleHold('+i+')"':''} style="min-width:0;padding:7px 2px;height:82px;border:${held?'2px solid var(--gold)':'1px solid var(--border)'};background:${held?'rgba(255,128,106,.12)':'#fff'};color:${red?'#c33':'#111'};border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:${held?'0 0 0 2px rgba(255,128,106,.12)':''};"><span style="font-size:22px;font-weight:900;line-height:1;">${esc(c.rank)}</span><span style="font-size:20px;line-height:1;margin-top:5px;">${esc(c.suit)}</span>${held?'<span style="font-size:8px;font-weight:900;color:#9a6700;margin-top:4px;">HOLD</span>':''}</button>`;}).join('')}</div>`;
     }
     async function renderVideoPoker(uOverride=null){
       const host=qs('videoPokerArea');if(!host)return;const u=uOverride||await getCasinoUser(),st=u.casino?.videoPoker;
@@ -4057,7 +4063,7 @@ window.kapaniLoadLeaflet = (function(){
         const balEl=qs('kapaniTreasuryBalance'); if(balEl) balEl.textContent=`${balance.toLocaleString('ru-RU')} ₽`;
         const hEl=qs('kapaniTreasuryHistory');
         if(hEl){ const entries=Object.values(state.history||{}).sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,8); hEl.innerHTML=entries.length?entries.map(x=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:11px;"><div style="min-width:0;"><div style="font-weight:800;">${escHtml(x.reason||'Поступление')}</div><div style="color:var(--muted);margin-top:2px;">${escHtml(x.date||'')} · ${escHtml(x.time||'')}</div></div><b style="white-space:nowrap;color:${x.type==='out'?'var(--red)':'var(--primary)'};">${x.type==='out'?'−':'+'}${Number(x.amount||0).toLocaleString('ru-RU')} ₽</b></div>`).join(''):'<div style="color:var(--muted);font-size:12px;">Операций пока нет</div>'; }
-      }catch(e){ console.warn('[municipalTreasury render]',e?.message||e); const balEl=qs('kapaniTreasuryBalance');if(balEl)balEl.textContent='Сервер казны недоступен'; }
+      }catch(e){ console.warn('[municipalTreasury render]',e?.message||e); const balEl=qs('kapaniTreasuryBalance');if(balEl)balEl.textContent='Не удалось загрузить баланс казны'; }
     }
     window.renderMunicipalTreasury=renderMunicipalTreasury;
 
@@ -4189,9 +4195,9 @@ window.kapaniLoadLeaflet = (function(){
   document.addEventListener('click',e=>{const target=e.target.closest('.bn-item');if(!target)return;target.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});});
 })();
 </script>
-<script src="./assets/kapani-ui.js" defer></script>
-<script src="./assets/kapani-icons.js" defer></script>
+<script src="./assets/kapani-ui.js?v=39" defer></script>
+<script src="./assets/kapani-icons.js?v=39" defer></script>
 <script src="./assets/kapani-season-classic.js" defer></script>
-<script src="./assets/kapani-finishes.js?v=18" defer></script>
+<script src="./assets/kapani-finishes.js?v=39" defer></script>
 </body>
 </html>

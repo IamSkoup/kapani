@@ -300,8 +300,8 @@ ready(function(){
   async function writeLicense(target, patch){
     const kind = Object.keys(patch).find(k=>k==='bike'||k==='scooter');
     if(!kind)throw new Error('Неверная категория прав');
-    const {error}=await window.KAPANI_BRIDGE.supabase.rpc('kp_mayor_update_resident',{
-      p_target:target,p_action:'license',p_value:{kind,enabled:!!patch[kind]}
+    const {error}=await window.KAPANI_BRIDGE.supabase.rpc('kp_update_license_v39',{
+      p_target:target,p_kind:kind,p_enabled:!!patch[kind]
     });
     if(error)throw error;
   }
@@ -311,20 +311,18 @@ ready(function(){
     const target = qs('adminTarget')?.value; if(!target) return toast('⚠️ Выберите жителя','gold');
     try {
       await writeLicense(target, { [kind]: true, [kind+'IssuedAt']: Date.now() });
-      await pushNotification(target, `✅ Мэрия выдала вам ${kind==='bike'?'права на велосипед 🚲':'права на скутер 🛵'}`,'system');
       toast(`✅ ${target} получил права`,'green');
       showAdminLicenseStatus(target);
-    } catch(e){ toast('❌ ' + (e.message||e.code||'Ошибка'),'red'); }
+    } catch(e){ console.warn('[license]',e);toast('Не удалось изменить права','red'); }
   };
   window.adminRevokeLicense = async function(kind){
     if(window.currentNick !== ADMIN) return toast('🚫 Только мэр','red');
     const target = qs('adminTarget')?.value; if(!target) return toast('⚠️ Выберите жителя','gold');
     try {
       await writeLicense(target, { [kind]: false });
-      await pushNotification(target, `❌ Мэрия изъяла ваши ${kind==='bike'?'права на велосипед 🚲':'права на скутер 🛵'}`,'system');
       toast(`🚫 У ${target} изъяты права`,'gold');
       showAdminLicenseStatus(target);
-    } catch(e){ toast('❌ ' + (e.message||e.code||'Ошибка'),'red'); }
+    } catch(e){ console.warn('[license]',e);toast('Не удалось изменить права','red'); }
   };
 
 
@@ -341,9 +339,8 @@ ready(function(){
   async function ksbCheckAccess(){
     const myNick = window.currentNick;
     if(!myNick) { toast('❌ Не авторизован','red'); return null; }
-    const meSnap = await get(userRef(myNick));
-    if(!meSnap.exists()) { toast('❌ Профиль не найден','red'); return null; }
-    const me = meSnap.val();
+    const me = window.allUsersCache?.[myNick] || (await get(userRef(myNick))).val();
+    if(!me) { toast('Профиль не найден','red'); return null; }
     const isKsb = hasMunicipalJob(me,'КСБ') || me.job==='КСБ';
     const isPolice = hasMunicipalJob(me,'Полицейский') || me.job==='Полицейский';
     const isAdmin = myNick === ADMIN;
@@ -385,9 +382,8 @@ ready(function(){
     if(!target) return toast('❌ Житель с таким именем не найден','red');
     try {
       await writeLicense(target.nick, { [kind]: true, [kind+'IssuedAt']: Date.now() });
-      await pushNotification(target.nick, `✅ КСБ/Полиция выдали вам ${kind==='bike'?'права на велосипед 🚲':'права на скутер 🛵'}`,'system');
       toast(`✅ ${target.nick} получил права`,'green');
-    } catch(e){ toast('❌ ' + (e.message||e.code||'Ошибка'),'red'); }
+    } catch(e){ console.warn('[license]',e);toast('Не удалось изменить права','red'); }
   };
   window.ksbRevokeLicense = async function(kind){
     if(!(await ksbCheckAccess())) return;
@@ -397,9 +393,8 @@ ready(function(){
     if(!target) return toast('❌ Житель с таким именем не найден','red');
     try {
       await writeLicense(target.nick, { [kind]: false });
-      await pushNotification(target.nick, `❌ КСБ/Полиция изъяли ваши ${kind==='bike'?'права на велосипед 🚲':'права на скутер 🛵'}`,'system');
       toast(`🚫 У ${target.nick} изъяты права`,'gold');
-    } catch(e){ toast('❌ ' + (e.message||e.code||'Ошибка'),'red'); }
+    } catch(e){ console.warn('[license]',e);toast('Не удалось изменить права','red'); }
   };
 
   // Inject the КСБ/Полиция passport+license card directly into the static dutyPage

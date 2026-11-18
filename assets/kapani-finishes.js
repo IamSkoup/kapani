@@ -57,7 +57,7 @@
     const b = (await bridge().get(dbref('rentBuildings/' + id))).val();
     if (!b) throw new Error('Здание уже недоступно');
     if (b.renter && Number(b.rentExpiry) > Date.now()) throw new Error('Здание уже занято');
-    if (!confirm('Арендовать «' + b.name + '» на семь суток? Цена ' + money(b.weekPrice) + ' до серверной скидки по подписке.')) return;
+    if (!confirm('Арендовать «' + b.name + '» на семь суток? Цена ' + money(b.weekPrice) + ' без учёта скидки по подписке.')) return;
     const key = 'rent:' + id;
     const result = await rpc('kp_rental_v8', {p_action:'rent', p_id:requestId(key), p_building:id});
     commit(key);

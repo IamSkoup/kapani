@@ -8,10 +8,10 @@ const html=read('index.html');
 const css=read('assets/kapani-casino-performance.css');
 const sw=read('firebase-messaging-sw.js');
 
-assert.match(html,/kapani-casino-performance\.css\?v=30/);
+assert.ok(Number(html.match(/kapani-casino-performance\.css\?v=(\d+)/)?.[1])>=30);
 assert.ok(Number(html.match(/kapani-main-classic\.js\?v=(\d+)/)?.[1]||0)>=30);
 assert.ok(Number(sw.match(/kapani-static-v(\d+)/)?.[1]||0)>=30);
-assert.match(sw,/kapani-casino-performance\.css\?v=30/);
+assert.ok(Number(sw.match(/kapani-casino-performance\.css\?v=(\d+)/)?.[1])>=30);
 assert.match(main,/if\(host\.dataset\.kpCasinoBuilt!=='1'\|\|!host\.querySelector\('#v8CasinoBalance'\)\)/);
 assert.match(main,/host\.dataset\.kpCasinoBuilt='1'/);
 assert.match(main,/if\(casinoViewRequest\)return casinoViewRequest/);
@@ -47,7 +47,7 @@ const normalRpc=factory({rpc:(name,args)=>({abortSignal:async signal=>{
   const slowRpc=factory({rpc:()=>({abortSignal:signal=>new Promise(resolve=>{
     signal.addEventListener('abort',()=>resolve({data:null,error:{message:'cancelled'}}),{once:true});
   })})},fn=>{queueMicrotask(fn);return 1;},()=>{});
-  await assert.rejects(slowRpc('play',{p_id:'stable-id'}),/Повторите действие с той же суммой/);
+  await assert.rejects(slowRpc('play',{p_id:'stable-id'}),/Повторите(?: действие)? с той же суммой/);
   const emptyRpc=factory({rpc:()=>({abortSignal:async()=>({data:null,error:null})})},setTimeout,clearTimeout);
   await assert.rejects(emptyRpc('view'),/Нет подтверждения сервера/);
   console.log('OK: revision 30 casino request timeout, stable retry IDs, lazy audio, single DOM build, lightweight game sheets.');

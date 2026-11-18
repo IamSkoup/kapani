@@ -39,7 +39,6 @@
     mic:'<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5m-4 0h8"/>',
     send:'<path d="m2 12 20-9-5 18-5-7-10-2Zm10 2 10-11"/>',
     refresh:'<path d="M20 8a8 8 0 0 0-14-3L3 8m0-5v5h5M4 16a8 8 0 0 0 14 3l3-3m0 5v-5h-5"/>',
-    heart:'<path d="M12 21 3 12a5 5 0 0 1 7-7l2 2 2-2a5 5 0 0 1 7 7l-9 9Z"/>',
     sun:'<circle cx="12" cy="12" r="4"/><path d="M12 1v3m0 16v3M1 12h3m16 0h3M4 4l2 2m12 12 2 2M20 4l-2 2M6 18l-2 2"/>',
     leaf:'<path d="M3 20C2 8 9 4 21 3c-1 12-5 19-18 17Zm0 0c6-7 10-10 16-13"/>',
     game:'<rect x="2" y="6" width="20" height="12" rx="6"/><path d="M6 12h6m-3-3v6m8-3h.01m2-2h.01"/>',
@@ -51,7 +50,7 @@
     info:'<circle cx="12" cy="12" r="10"/><path d="M12 10v7m0-10h.01"/>',
     spark:'<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2Z"/>'
   };
-  const labels = {check:'Готово',close:'Ошибка',alert:'Внимание',chat:'Сообщения',news:'Новости',plus:'Добавить',minus:'Убрать',person:'Профиль',people:'Жители',crown:'Подписка',star:'Избранное',gift:'Подарок',bank:'Банк',money:'Деньги',card:'Карта',shop:'Магазин',bag:'Покупки',package:'Заказ',briefcase:'Работа',building:'Здание',map:'Карта местности',pin:'Место',calendar:'Календарь',clock:'Время',bell:'Уведомления',lock:'Доступ',shield:'Безопасность',file:'Документ',edit:'Изменить',delete:'Удалить',camera:'Камера',image:'Изображение',video:'Видео',mic:'Голос',send:'Отправить',refresh:'Обновить',heart:'Нравится',sun:'Погода',leaf:'Природа',game:'Игра',trophy:'Награда',vehicle:'Транспорт',health:'Здоровье',settings:'Настройки',chart:'Статистика',info:'Информация',spark:'Действие'};
+  const labels = {check:'Готово',close:'Ошибка',alert:'Внимание',chat:'Сообщения',news:'Новости',plus:'Добавить',minus:'Убрать',person:'Профиль',people:'Жители',crown:'Подписка',star:'Избранное',gift:'Подарок',bank:'Банк',money:'Деньги',card:'Карта',shop:'Магазин',bag:'Покупки',package:'Заказ',briefcase:'Работа',building:'Здание',map:'Карта местности',pin:'Место',calendar:'Календарь',clock:'Время',bell:'Уведомления',lock:'Доступ',shield:'Безопасность',file:'Документ',edit:'Изменить',delete:'Удалить',camera:'Камера',image:'Изображение',video:'Видео',mic:'Голос',send:'Отправить',refresh:'Обновить',sun:'Погода',leaf:'Природа',game:'Игра',trophy:'Награда',vehicle:'Транспорт',health:'Здоровье',settings:'Настройки',chart:'Статистика',info:'Информация',spark:'Действие'};
   function iconName(value) {
     if (/[✅☑✔]/u.test(value)) return 'check';
     if (/[❌❎🚫]/u.test(value)) return 'close';
@@ -87,7 +86,6 @@
     if (/[🎤🎙]/u.test(value)) return 'mic';
     if (/[📤🚀]/u.test(value)) return 'send';
     if (/[🔄🔁]/u.test(value)) return 'refresh';
-    if (/[❤️💖💗]/u.test(value)) return 'heart';
     if (/[☀🌤🔥]/u.test(value)) return 'sun';
     if (/[🌲🌱🍃🍂🍁🌿]/u.test(value)) return 'leaf';
     if (/[🎮🎰🎲🃏🎯🪙]/u.test(value)) return 'game';

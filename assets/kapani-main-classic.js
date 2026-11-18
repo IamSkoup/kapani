@@ -220,6 +220,8 @@ const ADMIN = 'Кайон';
 let _resolveKapaniReady;
 window.KAPANI_READY = new Promise(res => { _resolveKapaniReady = res; });
 window.kapaniReady = function(){ return window.KAPANI_READY; };
+const hasHeartSymbol=value=>/[\u2661\u2665\u2763\u2764\u{1F48C}\u{1F493}-\u{1F49F}\u{1F5A4}\u{1F90D}\u{1F90E}\u{1F9E1}\u{1FA75}-\u{1FA77}\u{1FAF6}\u{1F60D}\u{1F970}]/u.test(String(value||''));
+const profileSymbol=u=>hasHeartSymbol(u?.nicknameEmoji)?'':u?.nicknameEmoji||'';
 const JOB_JANITOR = CONFIG.jobs.janitor;
 const JOB_JOURNALIST = "Журналист";
 const JOB_ADVERTISER = "Рекламщик";
@@ -275,7 +277,7 @@ const BIZ_BG_EFFECTS = [
     { id: 'particles', name: '🌟 Частицы', price: 249, cls: 'profile-bg-particles' },
     { id: 'aurora', name: '🌌 Аврора', price: 399, cls: 'profile-bg-aurora' },
     { id: 'fire', name: '🔥 Пламя', price: 449, cls: 'profile-bg-fire' },
-    { id: 'plasma', name: '💜 Плазма', price: 499, cls: 'profile-bg-plasma' },
+    { id: 'plasma', name: 'Плазма', price: 499, cls: 'profile-bg-plasma' },
     { id: 'galaxy', name: '🌠 Галактика', price: 549, cls: 'profile-bg-galaxy' },
     { id: 'thunder', name: '⚡ Гром', price: 699, cls: 'profile-bg-thunder' },
     { id: 'hologram', name: '🪩 Голограмма', price: 749, cls: 'profile-bg-hologram' },
@@ -506,7 +508,6 @@ let lastMarketListings = {};
 let dmConvoMeta = {};
 const dmVerifiedPreviews = new Map();
 const dmIndexObservedTs = new Map();
-let dmPreviewRefreshBusy = false;
 let myPinnedChats = {};
 let dmTypingUnsub = null;
 let chatTypingUnsub = null;
@@ -647,7 +648,8 @@ window.onDmInputTyping = function(){
 // These helpers try Cloud Functions first, then fall back to direct DB operations
 async function callFunctionWithFallback(functionName, data, fallbackFn) {
     if(fallbackFn) return await fallbackFn(data);
-    throw new Error(`Серверная операция ${functionName} ещё не перенесена на Supabase`);
+    console.warn('[Kapani unavailable operation]',functionName);
+    throw new Error('Действие пока недоступно');
 }
 
 // Single-flight lock: several callers (e.g. several pushNotification() calls
@@ -1028,7 +1030,6 @@ const listingRef= (id)   => ref(db, `marketplace/${id}`);
 const notifRef  = (nick) => ref(db, `users/${nick}/notifications`);
 const txLogRef  = (nick) => ref(db, `users/${nick}/txlog`);
 const janitorSubsRef = () => ref(db, 'janitorSubmissions');
-const janitorSubRef = (id) => ref(db, `janitorSubmissions/${id}`);
 const wallRef = (nick) => ref(db, `walls/${nick}`);
 const newsRef = () => ref(db, 'news');
 const newsItemRef = (id) => ref(db, `news/${id}`);
@@ -1227,14 +1228,6 @@ function formatMoneyLine(tx){
     const d = escHtml(tx.date||'');
     const t = escHtml(tx.time||'');
     return `${d}, ${t} — ${sign}${amt} ₽ — ${desc}`;
-}
-async function syncJanitorTaskState(u){
-    if(!currentNick || !u || !hasMunicipalJob(u, JOB_JANITOR)) return;
-    const today = todayKey();
-    if(u.janitorTaskDate === today) return;
-    try {
-        await update(userRef(currentNick), { janitorTaskDate: today, janitorSubmissionId: '', janitorSubmissionStatus: 'ready', janitorProof: '', janitorComment: '' });
-    } catch(e) {}
 }
 function updateFrozenOverlay(u){
     const fo = qs('frozenOverlay');
@@ -1860,8 +1853,11 @@ function handleKapaniPushDeepLink(rawUrl){
         if(section==='messages'){
             navTo('messages');
             if(dm) setTimeout(()=>{ try{ if(typeof openDmChat==='function') openDmChat(decodeURIComponent(dm)); }catch(e){} },150);
-        } else if(section==='news'){
-            navTo('news');
+        } else if(section==='bank'||section==='news'){
+            navTo(section);
+        } else if(section==='driverPage'||section==='delivery'){
+            const role=section==='driverPage'?'Водитель':'Доставщик';
+            if(hasMunicipalJob(allUsersCache[currentNick],role))navTo(section==='driverPage'?'driverPage':'deliveryPage');
         } else if(rawUrl){
             navTo('profile');
         }
@@ -1920,21 +1916,19 @@ function removeAllServiceListeners(service){
 }
 function leaveAllServiceServices(){
     Object.keys(serviceListeners).forEach(removeAllServiceListeners);
+    if(_liveUserSummaryUnsub){_liveUserSummaryUnsub();_liveUserSummaryUnsub=null;}
 }
 async function loadAllUsersCache(force=false){
-    if(force){ allUsersCacheLoaded=false; allUsersCachePromise=null; }
-    if(!force && allUsersCacheLoaded) return allUsersCache;
-    if(!force && allUsersCachePromise) return allUsersCachePromise;
+    if(allUsersCachePromise)return allUsersCachePromise;
+    if(!force&&allUsersCacheLoaded)return allUsersCache;
     allUsersCachePromise = (async()=>{
-        const oldOwn=allUsersCache[currentNick]||{};
+        const nick=currentNick;
         const snap=await get(ref(db,'users'));
+        if(nick!==currentNick)return allUsersCache;
+        const liveOwn=allUsersCache[nick];
         allUsersCache=snap.val()||{};
-        if(currentNick && allUsersCache[currentNick]){
-            // The public users branch intentionally strips private settings.
-            // Do not overwrite the signed-in user's private local state.
-            if(oldOwn.settings && !allUsersCache[currentNick].settings)
-                allUsersCache[currentNick].settings=oldOwn.settings;
-        }
+        // The dedicated own-profile listener owns current balance and skin state.
+        if(nick&&liveOwn&&allUsersCache[nick])allUsersCache[nick]={...allUsersCache[nick],...liveOwn};
         allUsersCacheLoaded=true;
         window.allUsersCache=allUsersCache;
         if(currentNick && !allUsersCache[currentNick]){
@@ -1953,7 +1947,6 @@ function attachUserListener(){
         const u=snap.val();
         allUsersCache[currentNick]=u; window.allUsersCache=allUsersCache;
         try{ liveOwnAccountChanged(u); }catch(e){}
-        await syncJanitorTaskState(u);
         updateHeader(u); updateFrozenOverlay(u); updateHeader_balance(u);
         renderHomeStats_users(allUsersCache);
         const taskBalanceEl = qs('taskBalanceDisplay');
@@ -2065,7 +2058,8 @@ function attachChatService(){
     removeServiceListener('messages','chat');
     const generation=++generalChatGeneration;
     if(generalChatDeadline) clearTimeout(generalChatDeadline);
-    const cRef=query(chatRef(),orderByChild('createdAt'),limitToLast(80));
+    chatLoading=true;
+    const cRef=query(chatRef(),orderByChild('createdAt'),limitToLast(60));
     const cFn=(snap)=>{
         if(generation!==generalChatGeneration) return;
         if(generalChatDeadline){clearTimeout(generalChatDeadline);generalChatDeadline=null;}
@@ -2081,7 +2075,7 @@ function attachChatService(){
     // One persistent realtime listener for the open chat service.
     // Re-rendering never creates another Firebase listener.
     const cError=(err)=>{
-        if(generation!==generalChatGeneration) return;
+        if(generation!==generalChatGeneration||!chatLoading) return;
         if(generalChatDeadline){clearTimeout(generalChatDeadline);generalChatDeadline=null;}
         chatLoading=false;
         console.warn('[Kapani general chat load]',err?.message||err);
@@ -2090,9 +2084,6 @@ function attachChatService(){
             host.innerHTML='<div class="chat-empty-state">Не получилось загрузить чат. <button type="button" class="btn btn-ghost btn-sm" onclick="kpRetryGeneralChat()">Повторить</button></div>';
     };
     addServiceListener('messages','chat',cRef,cFn,cError);
-    // The realtime subscription can be delayed while a previous channel is
-    // being removed. Make a separate bounded read on every re-entry.
-    get(cRef).then(cFn).catch(cError);
     generalChatDeadline=setTimeout(()=>cError(new Error('Превышено время ожидания сообщений')),12000);
     // General-chat typing presence may still be used internally by voice/video flows,
     // but it is intentionally not rendered as a user-facing typing indicator.
@@ -2101,6 +2092,7 @@ function attachChatService(){
         const index=snap.val()||{};
         dmConvoMeta={};
         Object.entries(index).forEach(([peer,meta])=>{
+            if(!meta)return;
             const fromIndex={lastTs:Number(meta?.lastTs||0),latest:meta?.latest||null,unread:!!meta?.unread};
             dmIndexObservedTs.set(peer,fromIndex.lastTs);
             const verified=dmVerifiedPreviews.get(peer);
@@ -2110,7 +2102,6 @@ function attachChatService(){
         });
         if(curPage==='messages'&&document.querySelector('#msgPanel1.active'))renderDmUserList(allUsersCache);
         if(curPage==='messages'&&currentDmNick) renderDmMessages(lastDmMsgs);
-        if(curPage==='messages'&&document.querySelector('#msgPanel1.active'))void refreshDmPreviewsFromMessages();
     };
     addServiceListener('messages','dmInbox',dmInboxRef,dmInboxFn);
     const rsRef=ref(db,'readState');
@@ -2142,7 +2133,7 @@ function enterService(page){
         attachOrderService();
     } else if(service==='orders') attachOrderService();
     if(service==='tasks') startTaskLiveListeners();
-    if(service==='messages'){ 
+    if(service==='messages'&&!serviceListeners.messages?.chat){
         try{ if(!qs('chatEmojiPanel')) buildEmojiPanels(); }catch(e){}
         setGeneralChatPresence(!!document.querySelector('#msgPanel0.active'));
         // A loading placeholder may replace the old HTML on navigation.
@@ -2152,7 +2143,11 @@ function enterService(page){
         if(document.querySelector('#msgPanel0.active')){
             Promise.resolve(renderChat(lastChatMsgs||{})).catch(e=>console.warn('[Kapani cached chat]',e));
         }
-        loadAllUsersCache().then(()=>{ if(curPage==='messages') renderDmUserList(allUsersCache); }).catch(e=>console.warn('[Kapani] users cache:',e));
+        loadAllUsersCache().then(()=>{
+            if(curPage!=='messages')return;
+            renderDmUserList(allUsersCache);
+            if(document.querySelector('#msgPanel0.active'))renderChat(lastChatMsgs);
+        }).catch(e=>console.warn('[Kapani] users cache:',e));
         attachChatService();
     }
     if(service==='market'){ const r=marketRef(); addServiceListener('market','market',r,s=>{if(curPage==='market')renderMarket(s.val()||{});}); }
@@ -2198,10 +2193,7 @@ function attachListeners(){
 // LIVE DATA LAYER
 // Keeps balances, the user list and the data behind each page up to date
 // without reloads.
-//  • Users: `users/<nick>/<field>` LEAF listeners for the hot fields. A listener
-//    on the whole `users` node would stream every user's full subtree (txlog,
-//    notifications, …) on each heartbeat, so it is deliberately avoided. The
-//    user list itself (new/removed accounts, avatars) is re-synced every 3 min.
+//  • Users: one compact subscription for live fields, with a periodic directory refresh.
 //  • Pages: while a page is open, its data paths are listened to and the page's
 //    existing render function is re-run (debounced, and never while the user is
 //    typing inside that page).
@@ -2210,7 +2202,7 @@ function attachListeners(){
 // ═══════════════════════════════════════════════════════════════════
 const LIVE_USER_FIELDS=['balance','lastSeen','job','displayJob','displayName','subscription','subscriptionExpiry','accountFrozen','accountVerified','taskBalance','savingsBalance','kveScore','fine','employments','totalEarned','nicknameEmoji','avatarFrame'];
 const LIVE_USERS_FULL_REFRESH_MS=3*60*1000;
-const _liveUserLeafUnsubs=new Map();
+let _liveUserSummaryUnsub=null;
 let _liveUsersUiTimer=null,_liveUsersPresenceTimer=null,_liveUsersStale=false,_liveUsersLastFull=0,_liveLayerStarted=false;
 
 function isUserEditingIn(sectionId){
@@ -2223,22 +2215,23 @@ function isUserEditingIn(sectionId){
     return false;
 }
 function syncLiveUserListeners(){
-    if(!currentNick||!allUsersCacheLoaded) return;
-    const nicks=new Set(Object.keys(allUsersCache||{}));
-    for(const [nick,unsubs] of [..._liveUserLeafUnsubs]){
-        if(!nicks.has(nick)||nick===currentNick){ unsubs.forEach(u=>{try{u();}catch(_){}}); _liveUserLeafUnsubs.delete(nick); }
-    }
-    for(const nick of nicks){
-        if(nick===currentNick||_liveUserLeafUnsubs.has(nick)) continue;
-        const unsubs=LIVE_USER_FIELDS.map(field=>onValue(ref(db,`users/${nick}/${field}`),snap=>{
-            const u=allUsersCache&&allUsersCache[nick]; if(!u) return;
-            const v=snap.val();
-            if(JSON.stringify(u[field])===JSON.stringify(v==null?undefined:v)) return;   // initial event / no change
-            if(v==null) delete u[field]; else u[field]=v;
-            markLiveUsersDirty(field==='lastSeen');
-        },()=>{}));
-        _liveUserLeafUnsubs.set(nick,unsubs);
-    }
+    if(!currentNick||_liveUserSummaryUnsub)return;
+    _liveUserSummaryUnsub=onValue(ref(db,'users/.summary'),snap=>{
+        const users=snap.val()||{};
+        let changed=false, presenceOnly=true;
+        for(const [nick,fields] of Object.entries(users)){
+            const u=allUsersCache[nick];
+            if(!u||nick===currentNick)continue;
+            for(const field of LIVE_USER_FIELDS){
+                const value=fields[field]??undefined;
+                if(JSON.stringify(u[field]??undefined)===JSON.stringify(value))continue;
+                if(value===undefined)delete u[field];else u[field]=value;
+                changed=true;
+                if(field!=='lastSeen')presenceOnly=false;
+            }
+        }
+        if(changed)markLiveUsersDirty(presenceOnly);
+    },error=>console.warn('[resident directory]',error));
 }
 function markLiveUsersDirty(presenceOnly){
     if(presenceOnly){
@@ -2284,7 +2277,7 @@ const LIVE_PAGE_BINDINGS={
     taxi:{q:()=>[],render:()=>renderTaxiHistory()},
     deliveryOrderPage:{q:()=>[deliveryCustomOrdersRef()],render:()=>renderMyDeliveryOrders()},
     deliveryPage:{q:()=>[deliveryCustomOrdersRef()],render:()=>renderDeliveryCustomOrders()},
-    janitorPage:{q:()=>[janitorSubsRef()],render:()=>renderJanitorPage()},
+    janitorPage:{q:()=>[janitorSubsRef()],render:snap=>renderJanitorPage(snap)},
     profile:{q:()=>[wallRef(currentNick)],render:(snap)=>renderWallFeed((snap&&snap.val&&snap.val())||{})}
 };
 const _livePageState=new Map();
@@ -2324,7 +2317,7 @@ function liveOwnAccountChanged(u){
         if(isUserEditingIn(curPage)) return;
         try{
             if(curPage==='bank'){ renderRecentTransfers(); renderFinancialStats(); renderSavingsDisplay(); }
-            else if(curPage==='janitorPage'){ renderJanitorPage(); }
+
             else if(curPage==='jobs'){ window.renderJobAppStatus&&window.renderJobAppStatus(); }
             else if(curPage==='rentBuildings'){ window.renderRentBuildings&&window.renderRentBuildings(); }
             else if(curPage==='hospital'){ renderHospital(); }
@@ -2460,16 +2453,7 @@ function updateHeader(u) {
         inviterRepair.hidden=!!u.invitedBy || !(accountAge>=0 && accountAge<=259200000);
     }
     
-    // Profile description
-    const descEl = qs('profileDescription');
-    if(descEl) {
-        if(u.profileDescription && u.profileDescription.trim()) {
-            descEl.textContent = u.profileDescription.trim();
-            descEl.style.display = 'block';
-        } else {
-            descEl.style.display = 'none';
-        }
-    }
+    showProfileDescription('profileDescription',u);
     
     // Subscription badge
     const subBadge = qs('subscriptionBadge');
@@ -2810,35 +2794,24 @@ window.kapaniPushSelfTest=async function(){
 };
 // ─── Push status line + one-tap repair (for people who cannot open the console) ───
 function pushErrorText(e){
-    const m=String(e?.message||e||'');
-    if(/unauthorized/i.test(m)) return 'Worker не принял ваш пароль-хэш: выйдите из аккаунта и войдите снова';
-    if(/vapid key mismatch/i.test(m)) return 'Ключ VAPID на сайте (config.js) и в Worker (wrangler.toml) РАЗНЫЙ. Сделайте одинаковыми: обновите config.js на GitHub Pages или задеплойте Worker';
-    if(/bad subscription/i.test(m)) return 'Push-сервис этого браузера не поддерживается Worker («bad subscription»)';
-    if(/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'Не удалось связаться с Worker (проверьте pushWorkerUrl в config.js и интернет)';
-    if(/хэш пароля/i.test(m)) return m;
-    return m||'неизвестная ошибка';
+    const message=String(e?.message||'');
+    if(/unauthorized|сессия/i.test(message))return 'Войдите в аккаунт заново.';
+    if(/Failed to fetch|NetworkError|Load failed/i.test(message))return 'Проверьте интернет и попробуйте ещё раз.';
+    if(/не поддерживает|разрешение|заблокированы|на экран дом/i.test(message))return message;
+    return 'Не удалось подключить уведомления.';
 }
 async function refreshPushWorkerStatus(){
-    const el=qs('pushWorkerStatus'); if(!el) return;
-    if(!PUSH_WORKER_URL){ el.textContent='Сборка '+KAPANI_BUILD+' · Cloudflare Worker не настроен (pushWorkerUrl пуст)'; return; }
-    const lines=['Сборка '+KAPANI_BUILD];
-    const perm=('Notification' in window)?Notification.permission:'unsupported';
-    lines.push('Разрешение браузера: '+perm);
-    let browserId=null;
-    try{ const sub=await getWebPushSubscription(false); if(sub){ browserId=await hashWebPushEndpoint(sub.endpoint); lines.push('Подписка в браузере: есть ('+new URL(sub.endpoint).host+')'); } else lines.push('Подписка в браузере: нет'); }catch(e){ lines.push('Подписка в браузере: ошибка '+pushErrorText(e)); }
+    const el=qs('pushWorkerStatus');if(!el)return;
+    if(!PUSH_WORKER_URL){el.textContent='Уведомления временно недоступны';return;}
+    const permission=window.Notification?.permission;
+    if(permission!=='granted'){
+        el.textContent=permission==='denied'?'Уведомления запрещены в браузере':'Уведомления ещё не включены';
+        return;
+    }
     try{
-        const ph=await getPushAuthHash();
-        if(!ph) lines.push('В Worker: ❌ не найден хэш пароля (выйдите и войдите снова)');
-        else{
-            const d=await pushWorkerCall('/debug',{nick:currentNick,ph,target:currentNick});
-            const devices=Array.isArray(d.yourDevices)?d.yourDevices:[];
-            const ok=browserId&&devices.some(x=>x.id===browserId);
-            lines.push(ok?'В Worker: ✅ это устройство зарегистрировано':'В Worker: ❌ это устройство НЕ зарегистрировано — нажмите «Переподключить»');
-        }
-    }catch(e){ lines.push('В Worker: ❌ '+pushErrorText(e)); }
-    let last=''; try{ last=localStorage.getItem('kp_push_last_error')||''; }catch(_){}
-    if(last) lines.push('Последняя ошибка: '+last);
-    el.textContent=lines.join('\n');
+        const subscription=await getWebPushSubscription(false);
+        el.textContent=subscription?'Уведомления разрешены на этом устройстве':'Нажмите «Включить», чтобы получать уведомления';
+    }catch(error){el.textContent=pushErrorText(error);}
 }
 window.kapaniPushRepair=async function(){
     try{
@@ -3233,11 +3206,11 @@ window.declineOnlineDuelFromNotif=async function(duelId,notifId){
 
 // ─── EMOJI PICKER ─────────────────────────
 const EMOJI_LIST = [
-    '😀','😂','😅','😍','🥰','😎','🤩','😢','😭','😡',
+    '😀','😂','😅','😎','🤩','😢','😭','😡',
     '🥺','😏','😜','🤔','🤗','😴','🤒','🥳','😇','👻',
-    '👍','👎','❤️','🔥','✨','💯','🎉','🙏','💪','👀',
+    '👍','👎','🔥','✨','💯','🎉','🙏','💪','👀',
     '🤝','💸','🛵','📦','🏠','🌲','🪨','🍎','⚡','🎶',
-    '😆','🤣','😋','🙃','🤑','😤','🫡','🫶','💀','👌',
+    '😆','🤣','😋','🙃','🤑','😤','🫡','💀','👌',
     '✅','❌','⚠️','🕐','📍','🗺','💰','🏆','🛒','🔧'
 ];
 function buildEmojiPanels(){['chatEmojiPanel','dmEmojiPanel','newsEmojiPanel'].forEach(id=>{const el=qs(id);if(!el)return;const grid=document.createElement('div');grid.className='emoji-grid';EMOJI_LIST.forEach(em=>{const btn=document.createElement('button');btn.className='ep-btn';btn.textContent=em;btn.onclick=()=>insertEmoji(id,em);grid.appendChild(btn);});el.appendChild(grid);});}
@@ -3576,11 +3549,11 @@ function renderActiveOrders(orders) {
 async function renderHomeWorker(orders){
     const taxiList=qs('workerTaxiList'),deliveryList=qs('workerDeliveryList'),janitorList=qs('workerJanitorList');
     if(!taxiList&&!deliveryList&&!janitorList)return;
-    const snap=await get(userRef(currentNick)); if(!snap.exists()) return;
-    const u=snap.val();
+    const u=allUsersCache[currentNick]||(await get(userRef(currentNick))).val();
+    if(!u)return;
     if(hasMunicipalJob(u,JOB_JANITOR)&&janitorList){
-        const status=u.janitorSubmissionStatus||'ready';
-        const statusTxt=status==='pending'?'⏳ Отчёт в мэрии':status==='approved'?'✅ День оплачен':status==='rejected'?'❌ Отказано':'🟢 Можно выполнять';
+        const status=wasJanitorReportToday(u)?u.janitorSubmissionStatus:'ready';
+        const statusTxt=status==='pending'?'⏳ Отчёт в мэрии':status==='approved'?'Уборка одобрена':status==='rejected'?'❌ Отказано':'🟢 Можно выполнять';
         janitorList.innerHTML=`<div class="work-order work-active"><div style="color:var(--primary);font-size:11px;font-weight:900;text-transform:uppercase;margin-bottom:8px;">Ежедневная задача</div><div style="font-weight:700;font-size:15px;margin-bottom:4px;">🧹 ${JANITOR_TASK_TEXT}</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Сегодня: ${todayKey()}</div><div style="font-size:12px;color:var(--muted);">${statusTxt}</div></div>`;
     }
     const ordersArr=Object.entries(orders).map(([id,o])=>({...o,id}));
@@ -3686,8 +3659,10 @@ window.handleAvatarUpload=async function(e){
 let primeCoverSaved = '';
 let primeCoverPending = '';
 window.openProfileCustomizer=async function(){
-    const snap=await get(userRef(currentNick));
-    const u=snap.val()||{};
+    if(qs('profileCustomizerModal'))return;
+    const nick=currentNick;
+    const u=allUsersCache[nick]||(await get(userRef(nick))).val()||{};
+    if(currentNick!==nick||qs('profileCustomizerModal'))return;
     primeCoverSaved = validPrimeCoverData(u.profileCustomBg) ? u.profileCustomBg : '';
     primeCoverPending = '';
     const hasPlus = (u.subscription === 'plus' || u.subscription === 'ultra' || u.subscription === 'prime') && u.subscriptionExpiry && new Date(u.subscriptionExpiry) > new Date();
@@ -3699,7 +3674,7 @@ window.openProfileCustomizer=async function(){
             <option value="">Без рамки</option>
             <option value="gold">🥇 Золотая (Plus)</option>
             <option value="rainbow">🌈 Радужная (Ultra)</option>
-            <option value="pulse">💓 Пульсирующая (Plus)</option>
+            <option value="pulse">Пульсирующая (Plus)</option>
             <option value="glow">✨ Свечение (Ultra)</option>
             <option value="neon">💫 Неоновая (Plus)</option>
             <option value="fire">🔥 Огненная (Ultra)</option>
@@ -3716,7 +3691,7 @@ window.openProfileCustomizer=async function(){
         frameOptions = `
             <option value="">Без рамки</option>
             <option value="gold">🥇 Золотая (Plus)</option>
-            <option value="pulse">💓 Пульсирующая (Plus)</option>
+            <option value="pulse">Пульсирующая (Plus)</option>
             <option value="neon">💫 Неоновая (Plus)</option>
             <option value="ice">❄️ Ледяная (Plus)</option>
             <option value="" disabled>──────────</option>
@@ -3865,7 +3840,7 @@ window.openProfileCustomizer=async function(){
                 
                 <div style="display:flex;gap:10px;">
                     <button class="btn btn-ghost" style="flex:1;" onclick="closeProfileCustomizer()">Отмена</button>
-                    ${hasPlus ? `<button class="btn btn-primary" style="flex:1;" onclick="saveProfileCustomization()">💾 Сохранить</button>` : ''}
+                    ${hasPlus ? `<button class="btn btn-primary" style="flex:1;" id="profileSkinSave" onclick="saveProfileCustomization()">Сохранить</button>` : ''}
                 </div>
             </div>
         </div>
@@ -3878,30 +3853,33 @@ window.openProfileCustomizer=async function(){
     document.body.appendChild(modal);
     
     // Set current selections
-    setTimeout(() => {
+    {
         const emojiSelect = qs('nicknameEmojiSelect');
         const frameSelect = qs('avatarFrameSelect');
         const bgSelect = qs('profileBgSelect');
         const chatSelect = qs('chatBgSelect');
         const themeSelect = qs('interfaceThemeSelect');
-        if(emojiSelect) emojiSelect.value = u.nicknameEmoji || '';
+        if(emojiSelect){
+            const symbol=u.nicknameEmoji||'';
+            if(symbol&&!hasHeartSymbol(symbol)&&![...emojiSelect.options].some(option=>option.value===symbol))emojiSelect.add(new Option(symbol,symbol));
+            emojiSelect.value=hasHeartSymbol(symbol)?'':symbol;
+        }
         if(frameSelect) frameSelect.value = u.avatarFrame || '';
         if(bgSelect) bgSelect.value = u.profileBgEffect || '';
         if(chatSelect) chatSelect.value = u.chatBubbleStyle || '';
         if(themeSelect) themeSelect.value = u.interfaceTheme || 'default';
         updateKapaniSkinPreview();
         updatePrimeCoverUploadVisibility();
-    }, 10);
+    }
 };
 
 window.closeProfileCustomizer=async function(){
+    if(qs('profileSkinSave')?.disabled)return;
     const modal = qs('profileCustomizerModal');
     if(modal) modal.remove();
     primeCoverPending = '';
-    // Cancel means cancel: restore the saved frame, wall and message skins.
     try {
-        const snap = await get(userRef(currentNick));
-        const u = snap.val() || {};
+        const u = allUsersCache[currentNick] || {};
         primeCoverSaved = validPrimeCoverData(u.profileCustomBg) ? u.profileCustomBg : '';
         previewAvatarFrame(u.avatarFrame || '');
         previewProfileBg(u.profileBgEffect || '');
@@ -4029,10 +4007,10 @@ window.saveProfileCustomization=async function(){
     const frameSelect = qs('avatarFrameSelect');
     const bgSelect = qs('profileBgSelect');
     const chatSelect = qs('chatBgSelect');
-    const themeSelect = qs('interfaceThemeSelect');
+    const saveButton=qs('profileSkinSave');
+    if(!saveButton||saveButton.disabled)return;
     if(bgSelect?.value === 'custom'){
-        const snap = await get(userRef(currentNick));
-        const u = snap.val() || {};
+        const u = allUsersCache[currentNick] || {};
         if(u.subscription !== 'prime' || !hasActiveSubscription(u)){
             toast('Свой фон доступен только с активным Kapani Prime', 'red');
             return;
@@ -4051,12 +4029,14 @@ window.saveProfileCustomization=async function(){
     if(chatSelect) updates.chatBubbleStyle = chatSelect.value || null;
     // Profile skins have a dedicated authenticated RPC: direct tree writes are
     // blocked by design and must remain blocked even for paying users.
+    saveButton.disabled=true;
     try {
         const {data,error}=await supabase.rpc('kp_profile_customization_v14',{p_settings:updates});
         if(error) throw error;
         if(!data?.ok) throw new Error('Сервер не подтвердил сохранение');
     }
-    catch(err){ toast('Не удалось сохранить фон: '+(err?.message||'ошибка'),'red'); return; }
+    catch(err){ console.warn('[profile customization]',err);toast('Не удалось сохранить оформление','red');return; }
+    finally{saveButton.disabled=false;}
     allUsersCache[currentNick]={...(allUsersCache[currentNick]||{}),...updates};
     updateHeader(allUsersCache[currentNick]);
     // Chat's HTML signature doesn't include style choices, so force a rerender
@@ -4245,22 +4225,32 @@ async function refreshSavingsFromServer(){
       .finally(()=>{savingsAccrualRequest=null;});
     return savingsAccrualRequest;
 }
+function profileDescriptionText(u){
+    return String(u?.profileDescription ?? u?.bio ?? u?.about ?? u?.description ?? '').trim();
+}
+function showProfileDescription(id,u){
+    const el=qs(id);
+    if(!el)return;
+    el.textContent=profileDescriptionText(u);
+    el.hidden=!el.textContent;
+    el.style.display=el.textContent?'block':'none';
+}
 window.editProfileDescription=async function(){
-    const snap=await get(userRef(currentNick));
-    const u=snap.val()||{};
-    const current=u.profileDescription||'';
-    const newDesc=prompt('Расскажите о себе (максимум 200 символов):',current);
-    if(newDesc===null)return;
-    const trimmed=newDesc.trim().slice(0,200);
+    const nick=currentNick;
+    if(!nick)return;
+    const profile=allUsersCache[nick]||(await get(userRef(nick))).val()||{};
+    const description=prompt('Описание профиля (до 200 символов)',profileDescriptionText(profile));
+    if(description===null)return;
     try{
-        await update(userRef(currentNick),{profileDescription:trimmed||null});
-        const updated={...u,profileDescription:trimmed||''};
-        allUsersCache[currentNick]=updated;
-        updateHeader(updated);
-        toast('✅ Описание обновлено','green');
+        const profileDescription=description.trim().slice(0,200);
+        await patchOwnProfile({profileDescription});
+        if(currentNick!==nick)return;
+        allUsersCache[nick]={...(allUsersCache[nick]||profile),profileDescription};
+        showProfileDescription('profileDescription',allUsersCache[nick]);
+        toast('Описание сохранено','green');
     }catch(error){
-        console.error('[editProfileDescription]',error);
-        toast('❌ Не удалось изменить описание: '+(error?.message||'ошибка'),'red');
+        console.warn('[profile description]',error);
+        toast('Не удалось сохранить описание','red');
     }
 };
 window.changeAvatar=window.changeAvatarUrl;
@@ -4992,7 +4982,7 @@ function describeAccountTransaction(tx){
         business_auto_salary:'Зарплата в бизнесе',auto_salary:'Зарплата',
         assistant_salary_out:'Выплата помощнику',assistant_salary_in:'Зарплата помощника',
         civic_fee:'Оплата услуги мэрии',civic_refund:'Возврат оплаты услуги мэрии',
-        janitor_reward:'Оплата работы уборщика',rental_payment:'Аренда здания',
+        janitor_reward:'Оплата уборки',janitor_weekly_salary:'Зарплата уборщика',rental_payment:'Аренда здания',
         savings_interest:'Начисление 0,3% в день на накопления'
     };
     const raw=String(tx.desc||'');
@@ -5386,29 +5376,6 @@ function latestMessageFrom(messages){
     if(!arr.length) return null;
     return arr.slice().sort((a,b)=>(a?.createdAt||0)-(b?.createdAt||0)).at(-1) || null;
 }
-async function refreshDmPreviewsFromMessages(force=false){
-    if(dmPreviewRefreshBusy||!currentNick||curPage!=='messages')return;
-    dmPreviewRefreshBusy=true;
-    try{
-        const peers=Object.entries(dmConvoMeta).slice(0,40);
-        for(const [peer,indexMeta] of peers){
-            if(curPage!=='messages')break;
-            const verified=dmVerifiedPreviews.get(peer);
-            const indexedTs=dmIndexObservedTs.get(peer)??Number(indexMeta?.lastTs||0);
-            if(!force&&verified&&verified.checkedIndexTs===indexedTs&&Date.now()-verified.checkedAt<30000)continue;
-            try{
-                const snap=await get(query(dmRef(dmKey(currentNick,peer)),orderByChild('createdAt'),limitToLast(80)));
-                const latest=latestMessageFrom(snap.val()||{});
-                const truth={checkedAt:Date.now(),checkedIndexTs:indexedTs,latest,lastTs:Number(latest?.createdAt||0)};
-                dmVerifiedPreviews.set(peer,truth);
-                if(dmConvoMeta[peer]&&dmIndexObservedTs.get(peer)===indexedTs){
-                    dmConvoMeta[peer]={...dmConvoMeta[peer],latest,lastTs:truth.lastTs,unread:!!latest&&dmConvoMeta[peer].unread};
-                    if(document.querySelector('#msgPanel1.active'))renderDmUserList(allUsersCache);
-                }
-            }catch(err){console.warn('[Kapani DM preview refresh]',peer,err?.message||err);}
-        }
-    }finally{dmPreviewRefreshBusy=false;}
-}
 function updateDmConvoMeta(allDms){
     const meta = {};
     Object.entries(allDms || {}).forEach(([key, convo]) => {
@@ -5529,7 +5496,6 @@ window.switchMsgTab=function(i){
     }
     if(i===1){
         renderDmContactList(allUsersCache, false);
-        void refreshDmPreviewsFromMessages();
         if(!allUsersCacheLoaded){
             loadAllUsersCache().then(users=>{
                 if(curPage==='messages' && document.querySelector('#msgPanel1.active')) renderDmUserList(users);
@@ -5576,7 +5542,7 @@ window.openDmChat=async function(nick){
     try{
         let u = allUsersCache?.[nick] || null;
         if(!u){
-            const snap = await get(userRef(nick));
+            const snap = await get(userRef(nick)).catch(()=>({exists:()=>false}));
             u = snap.exists() ? (snap.val() || {}) : {nick,avatar:'',job:'Житель'};
             if(snap.exists()){
                 allUsersCache[nick]=u;
@@ -5604,11 +5570,11 @@ window.openDmChat=async function(nick){
         }
 
         const key = dmKey(currentNick,nick);
-        Promise.resolve(update(dmIndexRef(currentNick),{[nick]:{...(dmConvoMeta[nick]||{}),unread:false,lastReadAt:Date.now()}})).catch(e=>console.warn('[DM index read]',e));
         const dmR = query(dmRef(key),orderByChild('createdAt'),limitToLast(80));
         const dmFn = (snap2) => {
             if(openSeq !== window._dmOpenSeq || currentDmNick !== nick) return;
             dmLoading = false;
+            clearTimeout(dmListeners.current?.timeoutId);
             lastDmMsgs = snap2.val() || {};
             const host = qs('dmMessages');
             if(host) host.removeAttribute('data-dm-load-error');
@@ -5622,7 +5588,7 @@ window.openDmChat=async function(nick){
             if(openSeq !== window._dmOpenSeq || currentDmNick !== nick) return;
             dmLoading = false;
             const host = qs('dmMessages');
-            if(host) host.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px 12px;">❌ Не удалось загрузить сообщения. Проверьте соединение и откройте чат ещё раз.</div>';
+            if(host)host.innerHTML='<div class="chat-empty-state">Не удалось загрузить сообщения. <button type="button" class="btn btn-ghost btn-sm" onclick="openDmChat(currentDmNick)">Повторить</button></div>';
             console.warn('[Kapani DM listener]', err?.message || err);
         };
         const unsub = onValue(dmR, dmFn, dmCancel);
@@ -5640,7 +5606,7 @@ window.openDmChat=async function(nick){
         }, 12000);
         dmListeners.current.timeoutId = timeoutId;
 
-        try{ await set(ref(db,`dms/${key}/lastRead/${currentNick}`),Date.now()); }catch(e){ console.warn('[Kapani DM lastRead]', e); }
+        void supabase.rpc('kp_chat_mark_dm_read_v39',{p_peer:nick}).then(({error})=>{if(error)console.warn('[DM read state]',error);});
 
         const peerReadRef = ref(db,`dms/${key}/lastRead/${nick}`);
         const readFn = (rs) => {
@@ -5826,6 +5792,7 @@ window.openUserProfile=async function(nick){
     qs('upmAv').onclick=()=>isVideoAvatarSrc(u.avatar||DEFAULT_AVATAR_URL) ? openVideoViewer(u.avatar||DEFAULT_AVATAR_URL) : openImgViewer(u.avatar||DEFAULT_AVATAR_URL);
     if(qs('upmAvVideo')) qs('upmAvVideo').onclick=()=>openVideoViewer(u.avatar||DEFAULT_AVATAR_URL);
     qs('upmNick').textContent=(displayNick(u)||u.nick)+(u.nick===ADMIN?' 👑':'');qs('upmJob').textContent=getUserBusinessRoleLabel(u, u.nick || currentNick);
+    showProfileDescription('upmDescription',u);
     
     // Display subscription badge in visitor profile
     const vpfSubBadge = qs('vpfSubscriptionBadge');
@@ -5949,19 +5916,10 @@ async function renderVisitorProfilePage(nick){
     const isActive = expiry && expiry > new Date();
     
     toggleAvatarMedia(qs('vpfAv'), qs('vpfAvVideo'), u.avatar||DEFAULT_AVATAR_URL);
-    qs('vpfName').textContent=(u.nicknameEmoji ? u.nicknameEmoji + ' ' : '') + (displayNick(u)||u.nick)+(u.nick===ADMIN?' 👑':'');
+    qs('vpfName').textContent=(profileSymbol(u) ? profileSymbol(u) + ' ' : '') + (displayNick(u)||u.nick)+(u.nick===ADMIN?' 👑':'');
     qs('vpfJob').textContent=getUserBusinessRoleLabel(u, u.nick || currentNick);
     
-    // Profile description
-    const descEl = qs('vpfDescription');
-    if(descEl) {
-        if(u.profileDescription && u.profileDescription.trim()) {
-            descEl.textContent = u.profileDescription.trim();
-            descEl.style.display = 'block';
-        } else {
-            descEl.style.display = 'none';
-        }
-    }
+    showProfileDescription('vpfDescription',u);
     const vo=qs('vpfOnline');
     if(vo){vo.className='upm-online '+(online?'is-online':'is-offline');const sp=vo.querySelector('span');if(sp)sp.textContent=online?'В сети':formatLastSeen(u);}
     
@@ -6441,6 +6399,7 @@ function renderMarket(listings){
     lastMarketListings=listings||{};
     const all=Object.entries(lastMarketListings).map(([id,l])=>({...l,id}));
     const cat=qs('mktBrowseCat')?.value||'all';
+    const term=(qs('v8MarketSearch')?.value||'').trim().toLocaleLowerCase('ru-RU');
     const allEl=qs('marketListings');
     get(userRef(currentNick)).then(s=>{ const u=s.val()||{}; renderDebtNotice('marketDebtNotice', u); }).catch(()=>{});
     if(allEl){
@@ -6448,6 +6407,7 @@ function renderMarket(listings){
         // the buyer cannot reopen the purchase to arrange its first delivery.
         let active=all.filter(l=>(l.status!=='sold' || l.category==='service' || l.buyer===currentNick) && !l.archived);
         if(cat&&cat!=='all') active=active.filter(l=>(l.category||'other')===cat);
+        if(term)active=active.filter(l=>[l.title,l.desc,l.address,l.seller].some(value=>String(value||'').toLocaleLowerCase('ru-RU').includes(term)));
         active.sort((a,b)=>Number(isListingPinned(b)) - Number(isListingPinned(a)) || (b.createdAt||0) - (a.createdAt||0));
         allEl.innerHTML=active.length===0?'<div style="color:var(--muted);font-size:13px;text-align:center;padding:40px 0;">Нет объявлений</div>':active.map(l=>marketCard(l,false)).join('');
     }
@@ -6613,7 +6573,7 @@ window.requestMeeting=async function(id){
 };
 window.confirmMeeting=async function(id){const snap=await get(listingRef(id));if(!snap.exists())return;const l=snap.val();if(!await marketMutation('confirm',id))return;await pushNotification(l.buyer,`✅ ${l.seller} подтвердил встречу!`,'market');toast('✅ Встреча подтверждена','green');};
 window.cancelMeeting=async function(id){const snap=await get(listingRef(id));if(!snap.exists())return;const l=snap.val();const otherNick=l.buyer===currentNick?l.seller:l.buyer;if(!await marketMutation('cancel',id))return;if(otherNick)await pushNotification(otherNick,`⚠️ ${currentNick} отказался от сделки`,'market');toast('❌ Отказ от встречи','red');};
-window.goToChat=function(nick){navTo('messages');setTimeout(()=>{switchMsgTab(1);setTimeout(()=>openDmChat(nick),200);},200);};
+window.goToChat=function(nick){navTo('messages');switchMsgTab(1);void openDmChat(nick);};
 window.declineListing=async function(id){const snap=await get(listingRef(id));if(!snap.exists())return;const l=snap.val();if(!await marketMutation('decline',id))return;await pushNotification(l.buyer,`❌ ${l.seller} отказал`,'market');toast('❌ Отклонено','red');};
 window.confirmPurchase=async function(id){
     if(!await requireMarketTaxiAccess()) return;
@@ -6855,22 +6815,49 @@ window.saveVehicle=async function(){
 // ─── QUIT JOB (master implementation — all overrides removed below) ───
 // quitJob — master implementation above (line ~4800)
 
-function renderJanitorTaskCard(u){
-    const el=qs('janitorTaskCard');if(!el||!u)return;
-    const status=u.janitorSubmissionStatus||'ready';
-    const statusText=status==='approved'?'✅ Отчёт оплачен':status==='pending'?'⏳ Отправлено в мэрию':status==='rejected'?'❌ Отклонено':'🟢 Можно отправить отчёт';
-    el.innerHTML=`<div class="status-card green"><div class="status-badge badge-active"><span class="pulse"></span>Уборщик</div><div style="font-weight:900;font-size:18px;margin-bottom:8px;">🧹 ${JANITOR_TASK_TEXT}</div><div style="font-size:13px;color:var(--muted);line-height:1.6;">Дата: <b style="color:var(--text)">${todayKey()}</b><br>${statusText}</div><div style="margin-top:12px;font-size:12px;color:var(--muted);">Фотоотчёт раз в сутки → проверка Кайоном → выплата.</div></div>`;
-    const btn=qs('janitorDoneBtn');if(btn)btn.disabled=(status==='pending'||status==='approved');
+function wasJanitorReportToday(u){
+    return u?.janitorTaskDate===todayKey();
 }
-async function renderJanitorPage(){
-    const uSnap=await get(userRef(currentNick));if(!uSnap.exists())return;
-    const u=uSnap.val();
-    renderJanitorTaskCard(u);
-    const hist=qs('janitorWorkerHistory');
-    if(!hist)return;
-    const sSnap=await get(janitorSubsRef());
-    const subs=Object.values(sSnap.val()||{}).filter(x=>x.worker===currentNick).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-    hist.innerHTML=subs.length===0?'<div style="color:var(--muted);font-size:13px;">Пока нет отправленных отчётов</div>':subs.map(s=>`<div class="work-order" style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px;"><b>🧹 ${escHtml(s.date||todayKey())}</b><span style="font-size:11px;color:${s.status==='approved'?'#22c55e':s.status==='rejected'?'var(--red)':'var(--gold)'};font-weight:900;">${s.status==='approved'?'Одобрено'+(s.reward?` +${s.reward}₽`:''):s.status==='rejected'?'Отклонено':'На проверке'}</span></div>${s.photo?`<img loading="lazy" decoding="async" class="submission-photo" src="${escHtml(s.photo)}" onclick="openImgViewer('${jsEsc(s.photo)}')">`:''}${s.comment?`<div style="font-size:13px;white-space:pre-wrap;">${escHtml(s.comment)}</div>`:''}</div>`).join('');
+function janitorWeekStart(day=todayKey()){
+    const date=new Date(day+'T00:00:00Z');
+    date.setUTCDate(date.getUTCDate()-(date.getUTCDay()+6)%7);
+    return date.toISOString().slice(0,10);
+}
+function renderJanitorTaskCard(subs){
+    const el=qs('janitorTaskCard');if(!el)return;
+    const day=todayKey(),monday=janitorWeekStart(day);
+    const dates=new Set(subs.filter(s=>s.status==='approved'&&s.date>=monday&&s.date<=day).map(s=>s.date));
+    const status=subs.find(s=>s.date===day)?.status||'ready';
+    const statusText={approved:'Уборка одобрена',pending:'Отчёт на проверке',rejected:'Отчёт отклонён. Можно отправить заново.',ready:'Можно отправить отчёт'}[status]||'Можно отправить отчёт';
+    el.innerHTML=`<div class="status-card green">
+      <h3>${escHtml(JANITOR_TASK_TEXT)}</h3><p>${statusText}</p>
+      <div class="kp-janitor-progress">
+        <strong>За неделю — ${dates.size} из 5 уборок</strong>
+        <progress value="${Math.min(dates.size,5)}" max="5" aria-label="Недельная норма уборок"></progress>
+        <small>${dates.size>=5?'Норма выполнена. Выплату оформит мэр.':'Засчитываются одобренные отчёты с понедельника по воскресенье.'}</small>
+      </div></div>`;
+    const btn=qs('janitorDoneBtn');
+    if(btn){
+      btn.dataset.reportLocked=String(status==='pending'||status==='approved');
+      btn.disabled=btn.dataset.reportLocked==='true'||!window._janitorProofData;
+    }
+}
+async function renderJanitorPage(snapshot){
+    const nick=currentNick,hist=qs('janitorWorkerHistory');
+    if(!nick||!hist)return;
+    try{
+        const data=(snapshot||await get(janitorSubsRef())).val()||{};
+        if(currentNick!==nick)return;
+        const subs=Object.values(data).filter(s=>(s.worker||s.from)===nick).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+        renderJanitorTaskCard(subs);
+        hist.innerHTML=subs.length?subs.map(s=>`<div class="work-order">
+          <b>${escHtml(s.date||'')}</b> · ${s.status==='approved'?'Одобрено':s.status==='rejected'?'Отклонено':'На проверке'}
+          ${s.photo?`<img loading="lazy" decoding="async" class="submission-photo" src="${escHtml(s.photo)}" onclick="openImgViewer(this.src)">`:''}
+          ${s.comment?`<p>${escHtml(s.comment)}</p>`:''}</div>`).join(''):'<p>Отчётов пока нет.</p>';
+    }catch(error){
+        console.warn('[janitor reports]',error);
+        hist.textContent='Не удалось загрузить отчёты.';
+    }
 }
 window.handleJanitorProof=async function(e){
     const file=e.target.files[0];if(!file)return;
@@ -6879,31 +6866,9 @@ window.handleJanitorProof=async function(e){
     window._janitorProofData=dataUrl;
     const prev=qs('janitorProofPreview');const img=qs('janitorProofImg');
     if(prev&&img){img.src=dataUrl;prev.style.display='block';}
-    const btn=qs('janitorDoneBtn');if(btn)btn.disabled=false;
+    const btn=qs('janitorDoneBtn');if(btn)btn.disabled=btn.dataset.reportLocked==='true';
     e.target.value='';
 };
-window.submitJanitorDone=async function(){
-    const uSnap=await get(userRef(currentNick));if(!uSnap.exists())return;
-    const u=uSnap.val();
-    if(isMigrantUser(u)) return toast(`🚫 ${ROLE_MIGRANT}: задания недоступны`,'red');
-    if(!hasMunicipalJob(u,JOB_JANITOR))return toast('⚠️ Только для уборщика','gold');
-    if(u.janitorSubmissionStatus==='pending')return toast('⏳ Уже отправлено','gold');
-    if(u.janitorSubmissionStatus==='approved')return toast('✅ Сегодня уже закрыто','green');
-    if(!window._janitorProofData)return toast('⚠️ Прикрепите фото','gold');
-    const id=genId();
-    const sub={id,worker:currentNick,workerAvatar:u.avatar||DEFAULT_AVATAR_URL,workerJob:u.job||JOB_JANITOR,date:todayKey(),task:JANITOR_TASK_TEXT,photo:window._janitorProofData,comment:(qs('janitorProofComment')?.value||'').trim(),status:'pending',createdAt:Date.now()};
-    await set(janitorSubRef(id),sub);
-    await update(userRef(currentNick),{janitorSubmissionId:id,janitorSubmissionStatus:'pending'});
-    window._janitorProofData=null;
-    const prev=qs('janitorProofPreview');if(prev)prev.style.display='none';
-    const im=qs('janitorProofImg');if(im)im.removeAttribute('src');
-    const c=qs('janitorProofComment');if(c)c.value='';
-    const fi=qs('janitorProofFile');if(fi)fi.value='';
-    const doneBtn=qs('janitorDoneBtn');if(doneBtn)doneBtn.disabled=true;
-    try{await pushNotification(ADMIN,`🧹 Отчёт уборщика: ${currentNick}`,'system');}catch(e){console.error('[notification pipeline][cleaner report]',e);}
-    toast('📨 Отчёт в мэрии','green');
-};
-
 // ─── KVE EXAM ─────────────────────────────
 const KVE_JOB_REQUIREMENTS={'Водитель':60,'Доставщик':53,'Уборщик':40,'Журналист':71,'КСБ':90,'Депутат':95,'Врач':90,'Помощник врача':80,'Рекламщик':50};
 window.KVE_JOB_REQUIREMENTS = KVE_JOB_REQUIREMENTS;
@@ -7127,38 +7092,11 @@ function renderAdminJanitorSubmissions(subs){
             ${s.comment?`<div style="font-size:13px;color:var(--text);white-space:pre-wrap;">${escHtml(s.comment)}</div>`:''}
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
                 <button class="btn btn-ghost btn-sm" onclick="goToChat('${jsEsc(s.worker)}')">💬 Чат</button>
-                <button class="btn btn-primary btn-sm" onclick="payoutJanitorSubmission('${jsEsc(s.id)}')">💵 Выплатить</button>
-                <button class="btn btn-red btn-sm" onclick="rejectJanitorSubmission('${jsEsc(s.id)}')">❌ Отказать</button>
+                <button class="btn btn-primary btn-sm" onclick="payoutJanitorSubmission('${jsEsc(s.id)}')">Одобрить</button>
+                <button class="btn btn-red btn-sm" onclick="rejectJanitorSubmission('${jsEsc(s.id)}')">Отклонить</button>
             </div>
         </div>`).join('');
 }
-window.payoutJanitorSubmission=async function(id){
-    if(currentNick!==ADMIN)return;
-    const amt=parseInt(prompt('Сумма выплаты уборщику (₽)','250')||'0',10)||0;
-    if(amt<=0)return toast('⚠️ Сумма','gold');
-    const snap=await get(janitorSubRef(id));if(!snap.exists())return;
-    const s=snap.val();
-    const uSnap=await get(userRef(s.worker));if(!uSnap.exists())return;
-    const u=uSnap.val();
-    const newBal=(u.balance||0)+amt;
-    const unfrozen=newBal>MIN_BALANCE_ALLOWED?{accountFrozen:false}:{};
-    await update(userRef(s.worker),{balance:newBal,janitorSubmissionStatus:'approved',janitorSubmissionId:id,...unfrozen});
-    await update(janitorSubRef(id),{status:'approved',reviewedBy:ADMIN,reviewedAt:Date.now(),reward:amt});
-    await logTx(s.worker,{type:'in',who:'Мэрия',amt,desc:'Выплата за уборку (одобрено Кайоном)'});
-    await pushNotification(s.worker,`✅ Уборка одобрена. +${amt}₽`,'money');
-    toast(`✅ ${s.worker} +${amt}₽`,'green');
-    renderAdmin();
-};
-window.rejectJanitorSubmission=async function(id){
-    if(currentNick!==ADMIN)return;
-    const snap=await get(janitorSubRef(id));if(!snap.exists())return;
-    const s=snap.val();
-    await update(userRef(s.worker),{janitorSubmissionStatus:'rejected',janitorSubmissionId:''});
-    await update(janitorSubRef(id),{status:'rejected',reviewedBy:ADMIN,reviewedAt:Date.now()});
-    await pushNotification(s.worker,'❌ Отчёт по уборке отклонён','system');
-    toast('❌ Отклонено','red');
-    renderAdmin();
-};
 async function renderAdmin(){
     const status=qs('mayorLoadStatus');
     if(status) status.textContent='Загружаем данные мэрии…';
@@ -8035,18 +7973,17 @@ window.navTo=function(id){
         leaveService(previousPage);
         try{ detachLivePage(previousPage); }catch(e){}
     }
-    document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
-    const el=qs(id);if(el){el.classList.add('active');curPage=id;}
+    const el=qs(id);if(el){if(previousPage!==id)qs(previousPage)?.classList.remove('active');el.classList.add('active');curPage=id;}
     for(let i=0;i<12;i++){const b=qs('bn'+i);if(b)b.classList.toggle('sel',bnMap[id]===i);}
     unlockBodyScroll(true); window.scrollTo(0,0);
-    if(el){requestAnimationFrame(()=>{void el.offsetHeight;el.style.pointerEvents='';});}
+    if(el)el.style.pointerEvents='';
     enterService(id);
     try{ attachLivePage(id); }catch(e){ console.debug('[Kapani live] attach:',e?.message||e); }
     if(id==='adminPage') { window.mountMayorDashboard?.(); renderAdmin(); setTimeout(renderAdminAdvertiserStats,50); }
     if(id==='kveExam') renderKveSection();
     if(id==='jobs') renderKveSection();
     if(id==='driverPage'||id==='deliveryPage') get(ordersRef()).then(s=>renderWorkerPage(s.val()||{}));
-    if(id==='messages'){ const chatHost=qs('chatMessages');if(chatHost&&!chatHost.innerHTML.trim())chatHost.innerHTML=loadingHtml('Загрузка чата...');const dmHost=qs('dmMessages');if(dmHost&&currentDmNick&&!dmHost.innerHTML.trim())dmHost.innerHTML=loadingHtml('Загрузка сообщений...');chatLoading=true; }
+    if(id==='messages'&&!qs('chatMessages')?.childElementCount){qs('chatMessages').innerHTML=loadingHtml('Загружаем чат…');}
     if(id==='profile'){
         updatePushSettingsUI();
         if(window._kapaniNotificationsCache) renderNotifications(window._kapaniNotificationsCache);
@@ -8402,7 +8339,7 @@ window.revealMafiaCard=function(i,roleId){
 // ──────────────────────────────────────────────
 // 💎 ТРИ В РЯД (переработанная версия)
 // ──────────────────────────────────────────────
-const M3_GEMS=['💎','🔥','⚡','🍀','💜','🌸'];
+const M3_GEMS=['💎','🔥','⚡','🍀','🟣','🌸'];
 const M3_COLS=6,M3_ROWS=6,M3_INIT_MOVES=20;
 let m3Board=[],m3Score=0,m3Moves=M3_INIT_MOVES,m3Selected=null,m3Active=false,m3Combo=1,m3Processing=false;
 let m3HintCells=[];
@@ -8657,7 +8594,7 @@ window.match3BuyRevive=async function(){
   await logTx(currentNick,{type:'out',who:'Три в ряд',amt:10,desc:'+10 ходов'});
   m3Moves+=10;
   m3Active=true;
-  toast('❤️ +10 ходов добавлено!','green');
+  toast('+10 ходов добавлено!','green');
   renderMatch3();
   updateMatch3BalDisplay();
 };
@@ -13508,20 +13445,14 @@ window.renderDeliveryOrderOptions = async function(forceFetch = false) {
     const marketSel = qs('deliveryOrderMarketItem');
     if (!sourceSel || !bizSel || !prodSel || !marketSel) return;
 
-    if (forceFetch || !Object.keys(allBusinessesCache || {}).length) {
-        try {
-            const snap = await get(bizRef());
-            const raw = snap.val() || {};
-            if (raw && Object.keys(raw).length) allBusinessesCache = raw;
-        } catch(e) {}
-    }
-    if (forceFetch || !Object.keys(lastMarketListings || {}).length) {
-        try {
-            const snap = await get(marketRef());
-            const raw = snap.val() || {};
-            if (raw && Object.keys(raw).length) lastMarketListings = raw;
-        } catch(e) {}
-    }
+    const previousBiz=bizSel.value, previousMarket=marketSel.value;
+    const refresh=trace=>trace.catch(error=>console.warn('[delivery catalog]',error));
+    await Promise.all([
+        (forceFetch||!Object.keys(allBusinessesCache||{}).length)
+            ?refresh(get(bizRef()).then(snap=>{allBusinessesCache=snap.val()||{};})):null,
+        (forceFetch||!Object.keys(lastMarketListings||{}).length)
+            ?refresh(get(marketRef()).then(snap=>{lastMarketListings=snap.val()||{};})):null
+    ]);
 
     const businesses = deliveryBusinessOptions();
     const businessOptions = businesses.length
@@ -13538,12 +13469,11 @@ window.renderDeliveryOrderOptions = async function(forceFetch = false) {
         : '<option value="">Нет подходящих объявлений</option>';
     fillSelectOptions(marketSel, marketOptions, 'Нет подходящих объявлений');
 
-    if (!bizSel.value && businesses.length) bizSel.value = businesses[0].id;
-    if (!marketSel.value && marketItems.length) marketSel.value = marketItems[0].id;
+    bizSel.value=businesses.some(b=>b.id===previousBiz)?previousBiz:'';
+    marketSel.value=marketItems.some(l=>l.id===previousMarket)?previousMarket:'';
 
     updateDeliveryBizProducts();
     updateDeliverySourceHint();
-    updateDeliverySummary();
 };
 
 let _placeDeliveryOrderBusy = false;
@@ -14479,7 +14409,7 @@ window.kpV8Point=point;
 window.kpCurrentBizId=()=>currentBizId;
 async function rpc(name,args={}){const {data,error}=await supabase.rpc(name,args);if(error)throw new Error(error.message||'Операция не выполнена');return data;}
 async function action(key,fn){if(v8.busy.has(key))return;v8.busy.add(key);try{return await fn();}catch(e){console.error('[Kapani v8]',e);toast(errorText(e.message),'red');}finally{v8.busy.delete(key);}}
-function errorText(t){const errors={'Insufficient funds':'Недостаточно средств','Insufficient casino balance':'Недостаточно средств на игровом счёте','Insufficient funds or balance limit':'Не хватает денег на счёте для создания события и формирования резерва выплат.','Wait for the current round':'Подождите завершения текущего раунда','Daily deposit limit: 10000':'Дневной лимит пополнения — 10 000 ₽','Verified active account required':'Нужен подтверждённый мэрией активный аккаунт','This time is already booked':'Это время уже занято. Выберите другое','Event payout reserve exhausted':'Лимит ставок этого события исчерпан','Invalid event':'Укажите название события от 3 до 120 символов и выберите тип «Спорт» или «Битва».','Invalid side or odds':'Укажите обе стороны события и коэффициенты от 1,01 до 20.','Invalid budget or deadline':'Резерв должен быть от 100 до 100 000 ₽, а завершение ставок — в будущем.','Mayor access required':'Создание и завершение событий доступно только мэру.','Seller must confirm the purchase first':'Сначала продавец должен подтвердить покупку','Cannot cancel after service has started':'После начала выполнения отмена недоступна'};if(/function.*does not exist|Could not find the function|schema cache/i.test(t))return 'База ещё не обновлена. Примените INSTALL.sql из новой версии сайта.';return errors[t]||t;}
+function errorText(t){const errors={'Insufficient funds':'Недостаточно средств','Insufficient casino balance':'Недостаточно средств на игровом счёте','Insufficient funds or balance limit':'Не хватает денег на счёте для создания события и формирования резерва выплат.','Wait for the current round':'Подождите завершения текущего раунда','Daily deposit limit: 10000':'Дневной лимит пополнения — 10 000 ₽','Verified active account required':'Нужен подтверждённый мэрией активный аккаунт','This time is already booked':'Это время уже занято. Выберите другое','Event payout reserve exhausted':'Лимит ставок этого события исчерпан','Invalid event':'Укажите название события от 3 до 120 символов и выберите тип «Спорт» или «Битва».','Invalid side or odds':'Укажите обе стороны события и коэффициенты от 1,01 до 20.','Invalid budget or deadline':'Резерв должен быть от 100 до 100 000 ₽, а завершение ставок — в будущем.','Mayor access required':'Это действие доступно только мэру.','Already bet on this event':'Вы уже поставили на это событие','Bet unavailable':'Ставка недоступна. Проверьте сумму и время окончания.','Today already submitted':'За сегодня отчёт уже отправлен','Janitor weekly target not met':'Уборщик ещё не выполнил норму','Seller must confirm the purchase first':'Сначала продавец должен подтвердить покупку','Cannot cancel after service has started':'После начала выполнения отмена недоступна'};if(/function.*does not exist|Could not find the function|schema cache/i.test(t))return 'Действие пока недоступно. Попробуйте позже.';return errors[t]||t;}
 function requestID(key){const storageKey='kp_pending_v8:'+currentNick+':'+key;try{if(!v8.requests.has(key)){v8.requests.set(key,sessionStorage.getItem(storageKey)||crypto.randomUUID());sessionStorage.setItem(storageKey,v8.requests.get(key));}}catch{if(!v8.requests.has(key))v8.requests.set(key,crypto.randomUUID());}return v8.requests.get(key);}
 const requestDelete=v8.requests.delete.bind(v8.requests);v8.requests.delete=key=>{try{sessionStorage.removeItem('kp_pending_v8:'+currentNick+':'+key);}catch{}return requestDelete(key);};
 function modal(title,content){window.kpCloseSheet();const el=document.createElement('div');el.id='kpV8Sheet';el.className='v8-overlay';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.innerHTML=`<section class="v8-sheet"><header><h2>${html(title)}</h2><button class="v8-icon" aria-label="Закрыть" onclick="kpCloseSheet()">×</button></header><div class="v8-sheet-body">${content}</div></section>`;el.addEventListener('click',e=>{if(e.target===el)window.kpCloseSheet();});document.body.appendChild(el);el._previous=document.activeElement;el.querySelector('button')?.focus();document.body.classList.add('v8-sheet-open');return el;}
@@ -14513,7 +14443,7 @@ const jobs=[['Водитель','Поездки по Капани','Забира
 const jobsPage=qs('jobs');if(jobsPage){const old=[...jobsPage.querySelectorAll('.card')].find(c=>c.textContent.includes('О профессиях'));const host=old||document.createElement('section');host.className='card v8-job-descriptions';host.innerHTML='<h3>О профессиях</h3><p class="v8-muted">Выберите профессию, чтобы узнать об обязанностях, оплате и балле КВЭ.</p><div class="v8-profession-picker">'+jobs.map(([name],i)=>`<button type="button" class="btn btn-ghost" aria-expanded="false" aria-controls="v8ProfessionInfo" onclick="kpDescribeJob(${i})">${name}</button>`).join('')+'</div><div id="v8ProfessionInfo" class="v8-job-info" aria-live="polite"><div><article id="v8ProfessionBody"></article></div></div>';if(!old)qs('jSel').closest('.card').after(host);}
 const jobDisclaimer=document.createElement('p');
 jobDisclaimer.className='v8-muted';
-jobDisclaimer.textContent='Зарплата рекламщика начисляется сервером за завершённую неделю, если приглашено хотя бы четыре новых пользователя.';
+jobDisclaimer.textContent='Зарплата рекламщика начисляется за завершённую неделю, если приглашено хотя бы четыре новых пользователя.';
 jobsPage?.querySelector('.v8-job-descriptions')?.append(jobDisclaimer);
 let describedJob=-1;
 window.kpDescribeJob=i=>{const panel=qs('v8ProfessionInfo'),close=describedJob===i;describedJob=close?-1:i;document.querySelectorAll('.v8-profession-picker button').forEach((b,n)=>{b.classList.toggle('selected',!close&&n===i);b.setAttribute('aria-expanded',String(!close&&n===i));});if(!close){const [name,tag,desc,salary,kve]=jobs[i];qs('v8ProfessionBody').innerHTML=`<div class="v8-eyebrow">${tag}</div><h3>${name}</h3><p>${desc}</p><div class="v8-profession-facts"><div><small>Оплата</small><strong>${salary}</strong></div><div><small>Требуемый балл КВЭ</small><strong>${kve} и выше</strong></div></div>`;}panel.classList.toggle('open',!close);};
@@ -14534,19 +14464,19 @@ window.doTransfer=()=>action('bank-transfer',async()=>{
   if(nick===currentNick)throw new Error('Выберите другого получателя');
   const key=`bank:${nick}:${amount}`,id=requestID(key);
   const data=await rpc('kp_bank_transfer',{p_recipient:nick,p_amount:amount,p_request_id:id});
-  if(!data.success)throw new Error('Перевод не подтверждён сервером');
+  if(!data.success)throw new Error('Не удалось выполнить перевод');
+  void pushWorkerCall('/bank-transfer',{transferId:id}).catch(error=>console.warn('[bank push]',error));
   _accountTransactionsCache=null;_accountTransactionsAt=0;
   void refreshBalance();
   const journalRecord=await confirmTransferLedgerV14(id);
   if(!journalRecord){
-    toast('Сервер принял перевод, но чек пока не подтверждён журналом. Проверьте историю банка.','gold');
+    toast('Перевод выполнен. Чек пока недоступен, проверьте историю банка.','gold');
     return;
   }
   v8.requests.delete(key);
   qs('bTo').value='';qs('bAmt').value='';
   void renderRecentTransfers();void renderFinancialStats();
-  void pushNotification(nick,`Перевод ${money(amount)} от ${currentNick}`,'money').catch(console.warn);
-  modal('Перевод выполнен',`<div class="v8-receipt"><div class="v8-success"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M16 33l11 11 23-25"/></svg></div><span class="v8-eyebrow">Капани Банк</span><h2>${money(amount)}</h2><p>Получатель: ${html(typeof recipient==='object'?displayNick(recipient):nick)}</p><dl><dt>Статус</dt><dd>Подтверждён банковским журналом</dd><dt>Комиссия</dt><dd>${data.commission!=null?money(data.commission):'Учтена в операции'}</dd><dt>Дата</dt><dd>${html(journalRecord.date||new Date().toLocaleDateString('ru-RU'))} ${html(journalRecord.time||'')}</dd><dt>Номер операции</dt><dd class="v8-op-id">${html(id)}</dd></dl>${button('Готово','kpCloseSheet()')}</div>`);
+  modal('Перевод выполнен',`<div class="v8-receipt"><div class="v8-success"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M16 33l11 11 23-25"/></svg></div><span class="v8-eyebrow">Капани Банк</span><h2>${money(amount)}</h2><p>Получатель: ${html(typeof recipient==='object'?displayNick(recipient):nick)}</p><dl><dt>Статус</dt><dd>Выполнен</dd><dt>Комиссия</dt><dd>${data.commission!=null?money(data.commission):'Учтена в операции'}</dd><dt>Дата</dt><dd>${html(journalRecord.date||new Date().toLocaleDateString('ru-RU'))} ${html(journalRecord.time||'')}</dd><dt>Номер операции</dt><dd class="v8-op-id">${html(id)}</dd></dl>${button('Готово','kpCloseSheet()')}</div>`);
 });
 const bank=qs('bank');if(bank){const card=document.createElement('div');card.className='v8-bank-card';card.innerHTML='<span>Капани Банк</span><div class="v8-eyebrow">Основной счёт</div><strong id="v8BankBalance">—</strong><footer><span>КАПАНИ · ЖИТЕЛЬ</span><span>RUB</span></footer>';bank.prepend(card);}
 
@@ -14555,7 +14485,7 @@ v8.photos=[];v8.listingPoint=null;
 const marketHost=qs('marketListings');if(marketHost){const search=document.createElement('input');search.id='v8MarketSearch';search.type='search';search.placeholder='Поиск объявлений в Капани';search.setAttribute('aria-label','Поиск объявлений');search.oninput=()=>renderMarket(lastMarketListings);marketHost.before(search);}
 const oldMarketCard=marketCard;
 marketCard=function(l,isMine,archived){if(isMine)return oldMarketCard(l,isMine,archived);const photo=l.photos?.[0]||l.photo;return `<article class="v8-listing"><button class="v8-listing-open" onclick="kpOpenListing('${jsEsc(l.id)}')"><div class="v8-listing-photo">${photo?`<img src="${html(safeURL(photo))}" alt="${html(l.title)}" loading="lazy">`:'<span>Капани<br>Маркет</span>'}<span class="v8-category">${html(l.category||'other')}</span></div><div class="v8-listing-info"><h3>${html(l.title)}</h3><strong>${l.priceNegotiable?'Договорная':money(l.price)}</strong><small>${html(l.address||'Точка продажи не указана')}</small></div></button></article>`;};
-const oldRenderMarket=renderMarket;renderMarket=function(list){oldRenderMarket(list);const q=(qs('v8MarketSearch')?.value||'').toLowerCase().trim();if(q){const filtered=Object.fromEntries(Object.entries(list||{}).filter(([,l])=>`${l.title} ${l.desc} ${l.address||''}`.toLowerCase().includes(q)));const saved=lastMarketListings;oldRenderMarket(filtered);lastMarketListings=saved;}};
+
 window.kpOpenListing=id=>action('listing',async()=>{const l=(await get(listingRef(id))).val();if(!l)throw new Error('Объявление удалено');const photos=l.photos?.length?l.photos:l.photo?[l.photo]:[];const el=modal(l.title,`<div class="v8-gallery">${photos.map(p=>`<img src="${html(safeURL(p))}" loading="lazy" alt="Фото объявления" onclick="openImgViewer(this.src)">`).join('')}</div><div class="v8-listing-price">${l.priceNegotiable?'Цена договорная':money(l.price)}</div><div class="v8-note"><p>${html(l.desc||'Описание не заполнено')}</p><span>${html(l.condition||'')}</span></div><p>Продавец: <button class="v8-link" id="v8Seller">${html(l.seller)}</button></p><p>${html(l.address||'Адрес не указан')}</p>${point(l.sellerLat,l.sellerLng)?'<div id="v8ListingMap" class="v8-map"></div>':'<p class="v8-muted">Доставка недоступна: продавец не указал точку на карте.</p>'}<div class="v8-actions" id="v8ListingActions"></div><div class="v8-legacy-listing">${oldMarketCard({...l,id},l.seller===currentNick,false)}</div>`);qs('v8Seller').onclick=()=>{window.kpCloseSheet();openUserProfile(l.seller);};qs('v8ListingActions').innerHTML=button('Написать продавцу','kpListingChat()','btn btn-primary')+((l.buyer===currentNick&&l.status==='sold'&&point(l.sellerLat,l.sellerLng))?button('Заказать доставку',`kpDeliveryForListing('${jsEsc(id)}')`,'btn btn-ghost'):'');window.kpListingChat=()=>{window.kpCloseSheet();goToChat(l.seller);};if(point(l.sellerLat,l.sellerLng)){await window.kapaniLoadLeaflet();if(qs('v8ListingMap')){const map=L.map('v8ListingMap').setView([Number(l.sellerLat),Number(l.sellerLng)],16);addSatelliteLayer(map);L.marker([Number(l.sellerLat),Number(l.sellerLng)]).addTo(map);el._onClose=()=>map.remove();}}});
 window.handleMktPhoto=e=>action('market-photos',async()=>{const files=Array.from(e.target.files||[]);e.target.value='';if(v8.photos.length+files.length>8)throw new Error('Можно добавить не более 8 фотографий');for(const file of files){if(file.size>10*1024*1024)throw new Error('Фото должно быть меньше 10 МБ');const data=await compressImage(file,1400,0.84);const url=await uploadBlobToStorage(await(await fetch(data)).blob(),'market');v8.photos.push(url);}window._mktPhotoData=v8.photos[0];qs('mktPhotoPreview').style.display='block';qs('mktPhotoPreview').innerHTML=`<div class="v8-thumb-grid">${v8.photos.map((p,i)=>`<div><img src="${html(p)}" alt="Фото ${i+1}"><button onclick="kpRemoveListingPhoto(${i})" aria-label="Удалить фото ${i+1}">×</button></div>`).join('')}</div>`;});
 window.kpRemoveListingPhoto=i=>{v8.photos.splice(i,1);window._mktPhotoData=v8.photos[0]||null;qs('mktPhotoPreview').children[0]?.children[i]?.remove();};
@@ -14592,7 +14522,7 @@ updateTaxiCalc=function(){
   taxiQuote=null;const sequence=++taxiQuoteSerial;
   if(!coords)return;
   if(qs('btnCallTaxi'))qs('btnCallTaxi').disabled=true;
-  taxiFormula.textContent='Сверяем расстояние и цену с сервером…';
+  taxiFormula.textContent='Рассчитываем стоимость…';
   rpc('kp_service_quote_v8',{p_kind:'taxi',p_from_lat:coords[0],p_from_lng:coords[1],p_to_lat:coords[2],p_to_lng:coords[3]}).then(quote=>{
     if(sequence!==taxiQuoteSerial)return;
     taxiQuote={coords:coords.join(','),price:Number(quote.price)};
@@ -14602,7 +14532,7 @@ updateTaxiCalc=function(){
     taxiFormula.textContent='Цена рассчитана: '+money(quote.price)+'.';
   }).catch(e=>{
     if(sequence!==taxiQuoteSerial)return;
-    taxiFormula.textContent='Не удалось рассчитать сумму на сервере: '+errorText(e.message);
+    taxiFormula.textContent='Не удалось рассчитать стоимость: '+errorText(e.message);
     if(qs('btnCallTaxi'))qs('btnCallTaxi').disabled=true;
   });
 };
@@ -14649,9 +14579,14 @@ deliveryBusinessOptions=()=>Object.entries(allBusinessesCache||{}).map(([id,b])=
 // Show available goods as well as the buyer's completed purchases. A visible
 // listing is not automatically a paid purchase: the server enforces the
 // seller-confirmed marketplace payment before it accepts a delivery.
-deliveryMarketplaceOptions=()=>Object.entries(lastMarketListings||{}).map(([id,l])=>({...l,id})).filter(l=>l&&!l.archived&&!['work','service'].includes(l.category)&&l.seller!==currentNick&&(
-  l.status==='active'||(l.buyer===currentNick&&['meeting_requested','meeting_confirmed','sold'].includes(l.status))
-)).sort((a,b)=>Number(b.pinnedUntil||0)-Number(a.pinnedUntil||0)||Number(b.createdAt||0)-Number(a.createdAt||0));
+const deliveryListingOpen=l=>!l.status||['active','available','open'].includes(l.status);
+const deliveryListingReady=l=>l.status==='sold'&&l.buyer===currentNick;
+const canRequestDeliveryListing=l=>deliveryListingOpen(l)&&l.seller!==currentNick;
+deliveryMarketplaceOptions=()=>Object.entries(lastMarketListings||{})
+  .filter(([,l])=>l&&!l.archived&&!['work','service'].includes(l.category)&&(
+    !['sold','cancelled','deleted','closed','expired'].includes(l.status)||deliveryListingReady(l)))
+  .map(([id,l])=>({...l,id}))
+  .sort((a,b)=>Number(b.pinnedUntil||0)-Number(a.pinnedUntil||0)||Number(b.createdAt||0)-Number(a.createdAt||0));
 const optionsV7=window.renderDeliveryOrderOptions;
 const deliveryCatalogView={query:'',page:0,pageSize:8};
 function paintDeliveryMarketplaceDirectory(){
@@ -14666,7 +14601,7 @@ function paintDeliveryMarketplaceDirectory(){
     <div class="v8-listing-delivery">
       <div class="v8-listing-delivery-name"><b>${html(l.title||'Объявление')}</b><small>${l.priceNegotiable?'Цена договорная':money(l.price)} · ${html(l.seller||'Продавец')}</small></div>
       <button class="btn btn-ghost btn-sm" onclick="kpDeliveryForListing('${jsEsc(l.id)}')">Выбрать</button>
-      ${l.status==='active'?button('Договориться',`kpDeliveryRequestListing('${jsEsc(l.id)}')`,'btn btn-ghost btn-sm'):''}
+      ${canRequestDeliveryListing(l)?button('Договориться',`kpDeliveryRequestListing('${jsEsc(l.id)}')`,'btn btn-ghost btn-sm'):''}
     </div>`).join('')||'<p class="v8-muted">По этому запросу товаров нет.</p>';
   pagination.innerHTML=listings.length>deliveryCatalogView.pageSize
     ? `<button type="button" class="btn btn-ghost btn-sm" onclick="kpDeliveryCatalogPage(-1)" ${deliveryCatalogView.page===0?'disabled':''}>Назад</button><span>${deliveryCatalogView.page+1} из ${pages}</span><button type="button" class="btn btn-ghost btn-sm" onclick="kpDeliveryCatalogPage(1)" ${deliveryCatalogView.page===pages-1?'disabled':''}>Дальше</button>`
@@ -14683,7 +14618,7 @@ window.renderDeliveryOrderOptions=renderDeliveryOrderOptions=async function(forc
   const orderForm=page.querySelector('.card');
   if(orderForm&&host.previousElementSibling!==orderForm)orderForm.after(host);
   else if(!host.isConnected)page.append(host);
-  const wasOpen=host.querySelector('details')?.open||false;
+  const wasOpen=host.querySelector('details')?.open||qs('deliveryOrderSource')?.value==='marketplace';
   const total=deliveryMarketplaceOptions().length;
   host.innerHTML=`<details class="v8-delivery-directory" ${wasOpen?'open':''}>
     <summary>Найти товар на маркетплейсе <span>${total} объявлений</span></summary>
@@ -14773,7 +14708,7 @@ window.updateDeliverySummary=function(){
       : 'Пока нет выбранных товаров';
   }
 };
-window.kpDeliveryForListing=async id=>{window.kpCloseSheet();navTo('deliveryOrderPage');await renderDeliveryOrderOptions(true);qs('deliveryOrderSource').value='marketplace';updateDeliverySourceHint();qs('deliveryOrderMarketItem').value=id;updateDeliverySummary();};
+window.kpDeliveryForListing=async id=>{window.kpCloseSheet();if(curPage!=='deliveryOrderPage'){navTo('deliveryOrderPage');await renderDeliveryOrderOptions(true);}qs('deliveryOrderSource').value='marketplace';qs('deliveryOrderMarketItem').value=id;updateDeliverySourceHint();const details=qs('v8DeliveryCatalog')?.querySelector('details');if(details)details.open=true;};
 window.placeDeliveryOrder=()=>action('delivery-create',async()=>{
   const source=qs('deliveryOrderSource').value;
   const lat=qs('deliveryOrderLat').value,lng=qs('deliveryOrderLng').value;
@@ -14796,7 +14731,9 @@ window.placeDeliveryOrder=()=>action('delivery-create',async()=>{
     data.listingId=qs('deliveryOrderMarketItem').value;
     const listing=deliveryMarketplaceOptions().find(x=>x.id===data.listingId);
     if(!listing)throw new Error('Выберите объявление из списка маркетплейса');
-    if(listing.status==='active')throw new Error('Сначала договоритесь с продавцом о покупке. Отправьте заявку в карточке объявления, дождитесь подтверждения и оплатите товар. Затем оформите доставку.');
+    if(listing.seller===currentNick)throw new Error('Это ваше объявление');
+    if(deliveryListingOpen(listing))throw new Error('Сначала договоритесь с продавцом о покупке. Отправьте заявку в карточке объявления, дождитесь подтверждения и оплатите товар. Затем оформите доставку.');
+    if(listing.buyer!==currentNick)throw new Error('Другой покупатель уже договорился с продавцом');
     if(listing.status==='meeting_requested')throw new Error('Продавец ещё не подтвердил покупку. Дождитесь ответа, затем оплатите товар в К-маркете.');
     if(listing.status==='meeting_confirmed')throw new Error('Продавец подтвердил покупку. Сначала оплатите товар в К-маркете, после этого закажите доставку.');
     if(listing.status!=='sold'||listing.buyer!==currentNick)throw new Error('Это объявление пока не куплено вами.');
@@ -14838,7 +14775,7 @@ window.confirmCustomDeliveryPrice=id=>action('delivery:'+id,async()=>{toast('О�
 
 // Casino: four short server-settled games. No deck, seed or outcome is stored
 // client-side before the settlement. Existing casino money is not imported.
-const games={roulette:{title:'Roulette',sub:'Европейская рулетка',desc:'37 чисел. Красное и чёрное — ×2, зеро — ×36. Выплата включает ставку.',art:'roulette',choices:[['red','Красное'],['black','Чёрное'],['zero','Зеро']]},slots:{title:'Forest Gems',sub:'Три грани удачи',desc:'Три одинаковых символа — ×12. Ровно два одинаковых — ×1,5. Выплата округляется вниз.',art:'gems',choices:[]},dice:{title:'Lucky Six',sub:'Точный бросок',desc:'Выберите число от 1 до 6. За верный прогноз выплата ×5,7, включая ставку.',art:'dice',choices:[1,2,3,4,5,6].map(n=>[String(n),String(n)])},wheel:{title:'Green Wheel',sub:'Колесо Капани',desc:'20 равновероятных секторов: 11 ×0, 5 ×1, 2 ×2 и 2 ×5. Выплата включает ставку.',art:'wheel',choices:[]}};
+const games={roulette:{title:'Рулетка',desc:'37 чисел. Красное и чёрное — ×2, зеро — ×36. Выплата включает ставку.',art:'roulette',choices:[['red','Красное'],['black','Чёрное'],['zero','Зеро']]},slots:{title:'Игровые автоматы',desc:'Три одинаковых символа — ×12. Ровно два одинаковых — ×1,5. Выплата округляется вниз.',art:'gems',choices:[]},dice:{title:'Кости',desc:'Выберите число от 1 до 6. За верный прогноз выплата ×5,7, включая ставку.',art:'dice',choices:[1,2,3,4,5,6].map(n=>[String(n),String(n)])},wheel:{title:'Колесо',desc:'20 равновероятных секторов: 11 ×0, 5 ×1, 2 ×2 и 2 ×5. Выплата включает ставку.',art:'wheel',choices:[]}};
 const CASINO_REQUEST_TIMEOUT_MS=18000;
 let casinoViewRequest=null;
 let casinoLastViewAt=0;
@@ -14852,11 +14789,11 @@ async function casinoRpc(actionName,params={}){
   const timer=setTimeout(()=>controller.abort(),CASINO_REQUEST_TIMEOUT_MS);
   try{
     const {data,error}=await supabase.rpc('kp_casino_v8',{p_action:actionName,...params}).abortSignal(controller.signal);
-    if(error)throw new Error(controller.signal.aborted?'Сервер долго не отвечает. Повторите действие с той же суммой: вторая ставка не спишется.':error.message||'Операция не выполнена');
-    if(data===null||data===undefined)throw new Error('Нет подтверждения сервера. Повторите действие с той же суммой.');
+    if(error)throw new Error(controller.signal.aborted?'Ответ задерживается. Повторите с той же суммой, второй ставки не будет.':error.message||'Операция не выполнена');
+    if(data===null||data===undefined)throw new Error('Операция пока не подтверждена. Повторите с той же суммой.');
     return data;
   }catch(error){
-    if(controller.signal.aborted)throw new Error('Сервер долго не отвечает. Повторите действие с той же суммой: вторая ставка не спишется.');
+    if(controller.signal.aborted)throw new Error('Ответ задерживается. Повторите с той же суммой, второй ставки не будет.');
     throw error;
   }finally{clearTimeout(timer);}
 }
@@ -14865,7 +14802,16 @@ window.kapaniRenderCasino=async()=>{
   // Keep the same game-card DOM across visits: reconstructing SVGs and layered
   // cards on every navigation causes expensive paint/compositor allocations.
   if(host.dataset.kpCasinoBuilt!=='1'||!host.querySelector('#v8CasinoBalance')){
-    host.innerHTML=`<div class="v8-casino-top"><div><span class="v8-eyebrow">KAPANI CLUB</span><h2>Игровой зал</h2></div><button class="v8-balance" onclick="kpCasinoWallet()"><small>Игровой баланс</small><strong id="v8CasinoBalance">—</strong><span>Пополнить +</span></button></div><div class="v8-casino-banner"><div><span class="v8-eyebrow">Вечер в Капани</span><h2>Ваш ход.<br>Новая история.</h2><p>Четыре игры. Один игровой счёт.</p><button class="btn btn-ghost" onclick="kpCasinoMusic()" id="v8MusicButton">Включить музыку</button></div><img src="assets/casino-roulette.svg" alt="Рулетка" decoding="async"></div><div class="v8-section-label"><h3>Выберите игру</h3><span>Ставка до 1 000 ₽</span></div><div class="v8-game-grid">${Object.entries(games).map(([id,g])=>`<button class="v8-game-card" onclick="kpOpenGame('${id}')"><img src="assets/casino-${g.art}.svg" alt="" loading="lazy" decoding="async"><div><small>KAPANI ORIGINAL</small><h3>${g.title}</h3><p>${g.sub}</p></div></button>`).join('')}</div><div id="v8CasinoError" role="status"></div><div class="v8-note">Только игровая валюта Капани. Результат каждого раунда рассчитывается на сервере. Пополнение — до 10 000 ₽ в день, оборот ставок — до 20 000 ₽ в день. Выигрыш не гарантирован.</div><details class="v8-credits"><summary>Музыка и правила</summary><p>“Backbay Lounge” Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 License. <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.</p><p>Новый защищённый игровой счёт начинается с нуля. Старые подозрительные выигрыши не переносятся автоматически; основной счёт не изменяется.</p></details>`;
+    host.innerHTML=`<div class="v8-casino-top"><h2>Казино</h2>
+      <button class="v8-balance" onclick="kpCasinoWallet()"><small>Игровой счёт</small><strong id="v8CasinoBalance">—</strong></button></div>
+      <div class="v8-game-grid">${Object.entries(games).map(([id,g])=>`<button class="v8-game-card" onclick="kpOpenGame('${id}')">
+        <img src="assets/casino-${g.art}.webp" alt="" width="510" height="340" loading="lazy" decoding="async"><div><h3>${g.title}</h3></div></button>`).join('')}</div>
+      <div id="v8CasinoError" role="status"></div>
+      <p class="v8-muted">Игровые деньги Капани. Ставка до 1 000 ₽.</p>
+      <details class="v8-credits"><summary>Лимиты и музыка</summary>
+        <p>Пополнение до 10 000 ₽ в день. Сумма ставок до 20 000 ₽ в день.</p>
+        <button class="btn btn-ghost btn-sm" onclick="kpCasinoMusic()" id="v8MusicButton">Включить музыку</button>
+        <p>«Backbay Lounge», Kevin MacLeod. <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.</p></details>`;
     host.dataset.kpCasinoBuilt='1';
   }
   const bal=qs('v8CasinoBalance');if(bal&&v8.casino)bal.textContent=money(v8.casino.balance);
@@ -14893,12 +14839,12 @@ window.kpCasinoMove=kind=>action('casino-op',async()=>{
   if(!Number.isSafeInteger(amount)||amount<1||amount>10000){if(status)status.textContent='Введите целую сумму от 1 до 10 000 ₽';return;}
   if(!['deposit','withdraw'].includes(kind))return;
   const key=`casino:${kind}:${amount}`;
-  if(status)status.textContent='Проверяем остаток и выполняем перевод на сервере...';
+  if(status)status.textContent='Переводим деньги…';
   try{
     const result=await casinoRpc(kind,{p_id:requestID(key),p_amount:amount});
-    if(!result||!Number.isFinite(Number(result.balance)))throw new Error('Сервер не подтвердил изменение игрового баланса');
+    if(!result||!Number.isFinite(Number(result.balance)))throw new Error('Не удалось обновить игровой счёт');
     v8.requests.delete(key);v8.casino=result;casinoStateRevision++;casinoLastViewAt=Date.now();
-    if(status)status.textContent='Перевод подтверждён сервером';
+    if(status)status.textContent='Перевод выполнен';
     window.kpCloseSheet();await window.kapaniRenderCasino();await refreshBalance();
     toast(kind==='deposit'?'Игровой счёт пополнен':'Средства возвращены на основной счёт','green');
   }catch(e){if(status)status.textContent='Ошибка перевода: '+errorText(e.message);throw e;}
@@ -14906,7 +14852,7 @@ window.kpCasinoMove=kind=>action('casino-op',async()=>{
 window.kpOpenGame=id=>{
   const g=games[id];if(!g)return;
   v8.game=id;
-  modal(g.title,`<div class="v8-game-stage"><img src="assets/casino-${g.art}.svg" alt="${html(g.sub)}" decoding="async"><div id="v8RoundResult" aria-live="polite">${g.sub}</div></div><p class="v8-muted">${g.desc}</p><label>Ставка<input id="v8Stake" type="number" value="100" min="1" max="1000" step="1"></label>${g.choices.length?`<label>Ваш выбор<select id="v8GameChoice">${g.choices.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label>`:''}<button class="btn btn-primary" id="v8CasinoPlay" type="button" onclick="kpPlayGame()">Играть</button><p class="v8-muted">Если связь пропадёт, повтори действие с той же ставкой. Повторно деньги не спишутся.</p>`);
+  modal(g.title,`<div class="v8-game-stage"><img src="assets/casino-${g.art}.webp" alt="" width="510" height="340" decoding="async"><div id="v8RoundResult" aria-live="polite"></div></div><p class="v8-muted">${g.desc}</p><label>Ставка<input id="v8Stake" type="number" value="100" min="1" max="1000" step="1"></label>${g.choices.length?`<label>Ваш выбор<select id="v8GameChoice">${g.choices.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label>`:''}<button class="btn btn-primary" id="v8CasinoPlay" type="button" onclick="kpPlayGame()">Играть</button><p class="v8-muted">Если связь пропадёт, повтори действие с той же ставкой. Повторно деньги не спишутся.</p>`);
 };
 window.kpPlayGame=()=>action('casino-op',async()=>{
   const amount=Number(qs('v8Stake')?.value),choice=qs('v8GameChoice')?.value||null,game=v8.game;
@@ -14921,10 +14867,10 @@ window.kpPlayGame=()=>action('casino-op',async()=>{
   try{
     const result=await casinoRpc('play',{p_id:requestID(key),p_amount:amount,p_game:game,p_choice:choice});
     if(!result||!Number.isFinite(Number(result.balance))||!Number.isFinite(Number(result.payout)))
-      throw new Error('Сервер вернул неполный результат. Повторите действие с той же ставкой.');
+      throw new Error('Результат пока недоступен. Повторите с той же ставкой.');
     v8.requests.delete(key);
-    const gems=['◆','●','▲','■','⬟','✦'];
-    const value=Array.isArray(result.outcome)?result.outcome.map(n=>gems[n]||'?').join('  '):(game==='wheel'?'×':'')+result.outcome;
+    const gems=['Рубин','Янтарь','Изумруд','Сапфир','Аметист','Алмаз'];
+    const value=Array.isArray(result.outcome)?result.outcome.map(n=>gems[n]||'?').join(' · '):(game==='wheel'?'×':'')+result.outcome;
     stage.innerHTML=`<b>${html(value)}</b><span>${result.payout?`Выплата ${money(result.payout)}`:'Без выигрыша'}</span><small>Баланс: ${money(result.balance)}</small>`;
     v8.casino={...(v8.casino||{}),...result};casinoStateRevision++;casinoLastViewAt=Date.now();
     const balanceEl=qs('v8CasinoBalance');if(balanceEl)balanceEl.textContent=money(result.balance);
@@ -14952,12 +14898,98 @@ window.kpCasinoMusic=async()=>{
 // Disable all old public casino entrypoints, even if an old link is retained.
 ['kapaniCasinoDeposit','kapaniCasinoWithdraw'].forEach(name=>window[name]=window.kpCasinoWallet);
 
-// Events keep races and add sports/battle markets backed by an organiser reserve.
-let eventData={events:[],bets:[]};
-window.kpLoadEvents=async()=>{let host=qs('v8Betting');if(!host){host=document.createElement('div');host.id='v8Betting';qs('events')?.appendChild(host);}if(!host)return;try{eventData=await rpc('kp_events_v8',{p_action:'view'});host.innerHTML=`<div class="v8-section-label"><h2>Ставки на события</h2><span>Спорт и битвы</span></div>${eventData.events.map(e=>`<article class="v8-event"><span class="v8-eyebrow">${e.kind==='sport'?'Спорт':'Битва'} · ${e.status==='open'?(new Date(e.closes_at)>new Date()?'Приём ставок':'Ставки закрыты'):e.status==='cancelled'?'Отменено':'Завершено'}</span><h3>${html(e.title)}</h3><p>До ${new Date(e.closes_at).toLocaleString('ru-RU')}</p><div class="v8-odds">${e.sides.map((side,i)=>button(`${html(side.name)} <b>×${Number(side.odds)}</b>`,`kpBet('${e.id}',${i})`,'btn btn-ghost')).join('')}</div>${e.status==='settled'?`<p>Победитель: ${html(e.sides[e.winner]?.name)}</p>`:''}${currentNick===ADMIN&&e.status==='open'?`<div class="v8-actions">${button('Указать результат',`kpSettleEvent('${e.id}')`,'btn btn-ghost')}${button('Отменить и вернуть ставки',`kpCancelEvent('${e.id}')`,'btn btn-ghost')}</div>`:''}</article>`).join('')||'<div class="v8-empty">Мэрия пока не открыла события для ставок.</div>'}<h3>Мои ставки</h3>${eventData.bets.map(b=>`<div class="v8-bet-row"><span>${html(eventData.events.find(e=>e.id===b.event_id)?.title||'Событие')}<small>${html(({pending:'Ожидается результат',won:'Выигрыш',lost:'Без выигрыша',refunded:'Возвращена'})[b.status]||b.status)}</small></span><b>${money(b.stake)}</b></div>`).join('')||'<p class="v8-muted">Ставок пока нет</p>'}`;}catch(e){host.innerHTML=`<p class="v8-note">${html(errorText(e.message))}</p>`;}};
-const eventsV7=window.renderEventsSection;window.renderEventsSection=async()=>{await eventsV7();if(!qs('v8MayorRace')){const el=document.createElement('div');el.id='v8MayorRace';el.className='v8-race-contact';el.innerHTML='<p>День гонки ещё не назначен или хотите предложить мероприятие?</p>'+button('Написать мэру →','kpContactMayor()','btn btn-primary v8-mayor-button');qs('eventsGrid')?.after(el);}await window.kpLoadEvents();};
-window.kpBet=(id,side)=>{const e=eventData.events.find(e=>e.id===id);if(!e||e.status!=='open'||new Date(e.closes_at)<=new Date())return toast('Приём ставок закрыт','gold');modal('Ставка на событие',`<h3>${html(e.title)}</h3><p>${html(e.sides[side].name)} · коэффициент ${e.sides[side].odds}</p><label>Сумма<input id="v8BetStake" type="number" min="10" max="1000" value="100"></label><p class="v8-muted">Выплата включает ставку. После подтверждения отменить свою ставку нельзя. При отмене события мэрией деньги возвращаются.</p>${button('Подтвердить ставку',`kpSubmitBet('${id}',${side})`)}`);};
-window.kpSubmitBet=(id,side)=>action('event-bet',async()=>{const stake=Number(qs('v8BetStake').value);if(!Number.isSafeInteger(stake)||stake<10||stake>1000)throw new Error('Ставка от 10 до 1 000 ₽');const key=`bet:${id}:${side}:${stake}`;await rpc('kp_events_v8',{p_action:'bet',p_id:requestID(key),p_data:{event:id,side,stake}});v8.requests.delete(key);window.kpCloseSheet();await window.kpLoadEvents();void refreshBalance();});
+const MAX_EVENT_STAKE=2500;
+const eventViews=new Map();
+let eventTab='races';
+
+window.kpShowEventTab=(tab,force=false)=>{
+  if(!['races','sport'].includes(tab))return;
+  eventTab=tab;
+  qs('event-races').hidden=tab!=='races';
+  qs('v8Betting').hidden=tab!=='sport';
+  qs('event-races-tab').setAttribute('aria-pressed',String(tab==='races'));
+  qs('event-sport-tab').setAttribute('aria-pressed',String(tab==='sport'));
+  if(tab==='sport')void window.kpLoadEvents(force);
+  else void eventsV7();
+};
+
+function paintEventMarkets(host,data){
+  const myEvents=new Set(data.bets.map(bet=>bet.event_id));
+  const titles=new Map(data.events.map(event=>[event.id,event.title]));
+  host.innerHTML=data.events.map(event=>{
+    const accepting=event.status==='open'&&Date.parse(event.closes_at)>Date.now();
+    const placed=myEvents.has(event.id);
+    const status=event.status==='cancelled'?'Отменено':event.status==='settled'?'Завершено':accepting?'Приём ставок':'Ставки закрыты';
+    const deadline=new Date(event.closes_at).toLocaleString('ru-RU',{
+      day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Moscow'
+    });
+    const choices=event.sides.map((side,index)=>`<button type="button" class="btn btn-ghost event-choice"
+      onclick="kpBet('${event.id}',${index})" ${accepting&&!placed?'':'disabled'}>
+      <span>${html(side.name)}<small>Коэффициент</small></span>
+      <b>${Number(side.odds).toLocaleString('ru-RU',{maximumFractionDigits:2})}</b></button>`).join('');
+    const actions=currentNick===ADMIN&&event.status==='open'
+      ? `<div class="v8-actions">${accepting?'':button('Указать результат',`kpSettleEvent('${event.id}')`,'btn btn-ghost')}
+        ${button('Отменить событие',`kpCancelEvent('${event.id}')`,'btn btn-ghost')}</div>`
+      : '';
+    return `<article class="v8-event"><p class="v8-muted">${status}</p><h3>${html(event.title)}</h3>
+      ${accepting?`<p>До ${html(deadline)} по Москве</p>`:''}<div class="v8-odds">${choices}</div>
+      ${placed?'<p class="v8-muted">Ставка уже сделана</p>':''}
+      ${event.status==='settled'?`<p>Победитель — ${html(event.sides[event.winner]?.name||'—')}</p>`:''}
+      ${actions}</article>`;
+  }).join('')||'<p class="v8-empty">Событий пока нет.</p>';
+  host.insertAdjacentHTML('beforeend',`<h3>Мои ставки</h3>
+    ${[...data.bets].reverse().map(bet=>`<div class="v8-bet-row"><span>${html(titles.get(bet.event_id)||'Событие')}
+      <small>${({pending:'Ожидается результат',won:'Выигрыш',lost:'Без выигрыша',refunded:'Возвращена'})[bet.status]||''}</small></span>
+      <b>${money(bet.stake)}</b></div>`).join('')||'<p class="v8-muted">Ставок пока нет.</p>'}`);
+}
+
+window.kpLoadEvents=async(force=false)=>{
+  const nick=currentNick,host=qs('v8Betting');
+  if(!nick||!host)return;
+  let view=eventViews.get(nick);
+  if(!view){view={at:0,data:null,request:null};eventViews.set(nick,view);}
+  if(!force&&view.data&&Date.now()-view.at<10000){paintEventMarkets(host,view.data);return;}
+  if(host.dataset.account!==nick){host.dataset.account=nick;host.textContent='Загружаем ставки…';}
+  else if(!host.textContent.trim())host.textContent='Загружаем ставки…';
+  if(!view.request){
+    view.request=rpc('kp_events_v8',{p_action:'view'}).then(data=>{
+      view.data=data;view.at=Date.now();return data;
+    }).finally(()=>{view.request=null;});
+  }
+  try{
+    const data=await view.request;
+    if(currentNick===nick)paintEventMarkets(host,data);
+  }catch(e){
+    if(currentNick===nick)host.innerHTML='<p>Не удалось загрузить ставки.</p>'+button('Повторить','kpLoadEvents(true)','btn btn-ghost');
+    console.warn('[Kapani events]',e);
+  }
+};
+const eventsV7=window.renderEventsSection;
+window.renderEventsSection=()=>window.kpShowEventTab(eventTab);
+const currentEventData=()=>eventViews.get(currentNick)?.data||{events:[],bets:[]};
+window.kpBet=(id,side)=>{
+  const data=currentEventData(),event=data.events.find(event=>event.id===id);
+  if(!event?.sides[side]||event.status!=='open'||Date.parse(event.closes_at)<=Date.now())return toast('Приём ставок закрыт','gold');
+  if(data.bets.some(bet=>bet.event_id===id))return toast('Вы уже поставили на это событие','gold');
+  modal('Ставка',`<h3>${html(event.title)}</h3>
+    <p>${html(event.sides[side].name)} · Коэффициент ${Number(event.sides[side].odds).toLocaleString('ru-RU')}</p>
+    <label>Сумма от 10 до 2 500 ₽<input id="v8BetStake" type="number" inputmode="numeric" min="10" max="${MAX_EVENT_STAKE}" value="100" step="1"></label>
+    ${button('Сделать ставку',`kpSubmitBet('${id}',${side},this)`)}`);
+};
+window.kpSubmitBet=(id,side,trigger)=>action('event-bet',async()=>{
+  const stake=Number(qs('v8BetStake').value);
+  if(!Number.isSafeInteger(stake)||stake<10||stake>MAX_EVENT_STAKE)throw new Error('Ставка от 10 до 2 500 ₽');
+  const key=`bet:${id}:${side}:${stake}`;
+  if(trigger)trigger.disabled=true;
+  try{
+    await rpc('kp_events_v8',{p_action:'bet',p_id:requestID(key),p_data:{event:id,side,stake}});
+    v8.requests.delete(key);
+    window.kpCloseSheet();
+    toast('Ставка принята','green');
+    void window.kpLoadEvents(true);
+    void refreshBalance();
+  }finally{if(trigger)trigger.disabled=false;}
+});
 window.kpCreateEventForm=()=>modal('Новое событие',`<label>Название<input id="v8EventTitle" maxlength="120"></label><label>Тип<select id="v8EventKind"><option value="sport">Спорт</option><option value="battle">Битва</option></select></label><div class="v8-two"><label>Первая сторона<input id="v8SideA" maxlength="80"></label><label>Коэффициент<input id="v8OddA" type="number" min="1.01" max="20" step=".01" value="1.9"></label><label>Вторая сторона<input id="v8SideB" maxlength="80"></label><label>Коэффициент<input id="v8OddB" type="number" min="1.01" max="20" step=".01" value="1.9"></label></div><label>Приём ставок до<input id="v8EventClose" type="datetime-local"></label><label>Резерв выплат из вашего счёта<input id="v8EventBudget" type="number" min="100" max="100000" value="5000"></label><p class="v8-muted">Коэффициенты фиксируются при создании. Резерв блокируется до результата. Неиспользованный остаток возвращается.</p>${button('Создать событие','kpCreateEvent()')}`);
 window.kpCreateEvent=()=>action('event-create',async()=>{
   const title=qs('v8EventTitle').value.trim(),kind=qs('v8EventKind').value;
@@ -14975,12 +15007,12 @@ window.kpCreateEvent=()=>action('event-create',async()=>{
   const d={title,kind,sides:[{name:a,odds:oddsA},{name:b,odds:oddsB}],closesAt:closesAt.toISOString(),budget};
   const key='event:'+JSON.stringify(d);
   await rpc('kp_events_v8',{p_action:'create',p_id:requestID(key),p_data:d});
-  v8.requests.delete(key);window.kpCloseSheet();toast('Событие создано, резерв сформирован','green');
+  v8.requests.delete(key);window.kpCloseSheet();eventViews.delete(currentNick);toast('Событие создано','green');
 });
-window.kpSettleEvent=id=>{const e=eventData.events.find(e=>e.id===id);modal('Результат события',`<h3>${html(e.title)}</h3><label>Победитель<select id="v8Winner">${e.sides.map((s,i)=>`<option value="${i}">${html(s.name)}</option>`).join('')}</select></label><p class="v8-muted">После закрытия ставок результат можно подтвердить один раз.</p>${button('Подтвердить результат',`kpConfirmResult('${id}')`)}`);};
-window.kpConfirmResult=id=>action('event-result',async()=>{if(!confirm('Зафиксировать результат и выполнить выплаты?'))return;await rpc('kp_events_v8',{p_action:'settle',p_id:id,p_data:{winner:Number(qs('v8Winner').value)}});window.kpCloseSheet();await window.kpLoadEvents();});
-window.kpCancelEvent=id=>action('event-result',async()=>{if(!confirm('Отменить событие и вернуть все ставки?'))return;await rpc('kp_events_v8',{p_action:'cancel',p_id:id});await window.kpLoadEvents();});
-if(qs('adminPage')){const card=document.createElement('div');card.className='card';card.innerHTML='<h3>Спорт и битвы</h3><p>Создание событий, коэффициенты и резерв выплат.</p>'+button('Добавить событие','kpCreateEventForm()')+button('Результаты и ставки',"navTo('events')",'btn btn-ghost');qs('adminPage').append(card);}
+window.kpSettleEvent=id=>{const e=currentEventData().events.find(e=>e.id===id);if(!e)return;modal('Результат события',`<h3>${html(e.title)}</h3><label>Победитель<select id="v8Winner">${e.sides.map((s,i)=>`<option value="${i}">${html(s.name)}</option>`).join('')}</select></label><p class="v8-muted">После закрытия ставок результат можно подтвердить один раз.</p>${button('Подтвердить результат',`kpConfirmResult('${id}')`)}`);};
+window.kpConfirmResult=id=>action('event-result',async()=>{if(!confirm('Зафиксировать результат и выполнить выплаты?'))return;await rpc('kp_events_v8',{p_action:'settle',p_id:id,p_data:{winner:Number(qs('v8Winner').value)}});window.kpCloseSheet();await window.kpLoadEvents(true);});
+window.kpCancelEvent=id=>action('event-result',async()=>{if(!confirm('Отменить событие и вернуть все ставки?'))return;await rpc('kp_events_v8',{p_action:'cancel',p_id:id});await window.kpLoadEvents(true);});
+if(qs('adminPage')){const card=document.createElement('div');card.className='card';card.innerHTML='<h3>Спорт и битвы</h3><p>Создание событий, коэффициенты и резерв выплат.</p>'+button('Добавить событие','kpCreateEventForm()')+button('Результаты и ставки',"navTo('events'); kpShowEventTab('sport')",'btn btn-ghost');qs('adminPage').append(card);}
 
 // Messenger drafts are scoped to the conversation. Uploading never sends.
 const draftKey=kind=>kind==='dm'?'dm:'+currentDmNick:'chat';
@@ -14998,13 +15030,21 @@ sendChatMsg=async function(text,mediaData,msgType){if(mediaData){draft('chat').f
 sendDmMsg=async function(text,mediaData,msgType){if(mediaData){draft('dm').files.push({url:mediaData,preview:mediaData,type:msgType});paintDraft('dm');return;}qs('dmInput').value=text||'';return sendDraft('dm');};
 const openDmV7=window.openDmChat;window.openDmChat=async nick=>{if(currentDmNick)draft('dm').text=qs('dmInput')?.value||'';const r=await openDmV7(nick);if(qs('dmInput'))qs('dmInput').value=draft('dm').text||'';paintDraft('dm');return r;};
 const mediaV7=mediaHtml;
-mediaHtml=function(m){if(!Array.isArray(m.attachments))return mediaV7(m);const text=m.text?`<div class="msg-caption">${html(m.text)}</div>`:'';const media=m.attachments.map(f=>{const src=html(safeURL(f.url));if(f.type==='video'||f.type==='video_circle')return `<video class="v8-chat-video ${f.type==='video_circle'?'v8-circle':''}" src="${src}" controls playsinline preload="${allUsersCache[currentNick]?.settings?.saveData===false?'metadata':'none'}"></video>`;if(f.type==='voice')return `<audio src="${src}" controls preload="none"></audio>`;return `<img class="${f.type==='sticker'?'v8-sticker':'v8-chat-image'}" src="${src}" loading="lazy" alt="${f.type==='sticker'?'Стикер':'Фото'}" onclick="openImgViewer(this.src)">`;}).join('');return (m.forwardedFrom?`<div class="v8-forwarded">Переслано от ${html(m.forwardedFrom)}</div>`:'')+text+`<div class="v8-media-album ${m.attachments.length>1?'multi':''}">${media}</div>`;};
+mediaHtml=function(m){
+  const gift=m.subscriptionGift;
+  if(gift&&['plus','ultra','prime'].includes(gift.plan)){
+    const plan=CONFIG.subscriptions[gift.plan].name;
+    const expiry=new Date(gift.expiresAt);
+    return `<div class="kp-subscription-gift"><small>Подарок</small><strong>${html(plan)}</strong>
+      ${Number.isFinite(expiry.getTime())?`<span>Действует до ${expiry.toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})}</span>`:''}</div>`;
+  }
+  if(!Array.isArray(m.attachments))return mediaV7(m);const text=m.text?`<div class="msg-caption">${html(m.text)}</div>`:'';const media=m.attachments.map(f=>{const src=html(safeURL(f.url));if(f.type==='video'||f.type==='video_circle')return `<video class="v8-chat-video ${f.type==='video_circle'?'v8-circle':''}" src="${src}" controls playsinline preload="${allUsersCache[currentNick]?.settings?.saveData===false?'metadata':'none'}"></video>`;if(f.type==='voice')return `<audio src="${src}" controls preload="none"></audio>`;return `<img class="${f.type==='sticker'?'v8-sticker':'v8-chat-image'}" src="${src}" loading="lazy" alt="${f.type==='sticker'?'Стикер':'Фото'}" onclick="openImgViewer(this.src)">`;}).join('');return (m.forwardedFrom?`<div class="v8-forwarded">Переслано от ${html(m.forwardedFrom)}</div>`:'')+text+`<div class="v8-media-album ${m.attachments.length>1?'multi':''}">${media}</div>`;};
 replyPreviewHtml=m=>m.reply?`<div class="v8-message-reply"><b>${html(m.reply.nick)}</b><span>${html(m.reply.text||'Вложение')}</span></div>`:'';
 const messageFrom=(kind,id)=>kind==='dm'?lastDmMsgs?.[id]:kind==='chat'?lastChatMsgs?.[id]:currentNewsMsgs?.[id];
 const oldActions=msgActionsHtml;
-msgActionsHtml=function(kind,id,m,isMe){if(kind==='news')return oldActions(kind,id,m,isMe);const counts={};Object.values(m.reactions||{}).forEach(r=>counts[r]=(counts[r]||0)+1);return `<div class="v8-message-actions"><div class="v8-reactions">${Object.entries(counts).map(([r,n])=>`<button class="${m.reactions?.[currentNick]===r?'mine':''}" onclick="kpReact('${kind}','${jsEsc(id)}','${html(r)}')">${html(r)} ${n}</button>`).join('')}</div><button class="v8-message-menu" aria-label="Действия с сообщением" onclick="kpMessageMenu('${kind}','${jsEsc(id)}')">···</button></div>`;};
+msgActionsHtml=function(kind,id,m,isMe){if(kind==='news')return oldActions(kind,id,m,isMe);const counts={};Object.values(m.reactions||{}).filter(r=>!hasHeartSymbol(r)).forEach(r=>counts[r]=(counts[r]||0)+1);return `<div class="v8-message-actions"><div class="v8-reactions">${Object.entries(counts).map(([r,n])=>`<button class="${m.reactions?.[currentNick]===r?'mine':''}" onclick="kpReact('${kind}','${jsEsc(id)}','${html(r)}')">${html(r)} ${n}</button>`).join('')}</div><button class="v8-message-menu" aria-label="Действия с сообщением" onclick="kpMessageMenu('${kind}','${jsEsc(id)}')">···</button></div>`;};
 function rerenderMessages(kind){const host=qs(kind==='dm'?'dmMessages':'chatMessages');if(host)delete host.dataset.sig;if(kind==='dm')window.renderDmMessages(lastDmMsgs);else window.renderChat(lastChatMsgs);}
-window.kpMessageMenu=(kind,id)=>{const m=messageFrom(kind,id);if(!m)return;const own=m.nick===currentNick;modal('Сообщение',`<div class="v8-reaction-picker">${['👍','❤️','😂','🔥','😮','😢'].map(r=>`<button onclick="kpReact('${kind}','${jsEsc(id)}','${r}')">${r}</button>`).join('')}</div><div class="v8-menu-list">${button('Ответить',`kpReply('${kind}','${jsEsc(id)}')`,'btn btn-ghost')}${button('Переслать',`kpForward('${kind}','${jsEsc(id)}')`,'btn btn-ghost')}${own?button('Редактировать',`kpEditMessage('${kind}','${jsEsc(id)}')`,'btn btn-ghost')+button('Удалить',`kpDeleteMessage('${kind}','${jsEsc(id)}')`,'btn btn-ghost'):''}</div>`);};
+window.kpMessageMenu=(kind,id)=>{const m=messageFrom(kind,id);if(!m)return;const own=m.nick===currentNick;modal('Сообщение',`<div class="v8-reaction-picker">${['👍','😂','🔥','😮','😢'].map(r=>`<button onclick="kpReact('${kind}','${jsEsc(id)}','${r}')">${r}</button>`).join('')}</div><div class="v8-menu-list">${button('Ответить',`kpReply('${kind}','${jsEsc(id)}')`,'btn btn-ghost')}${button('Переслать',`kpForward('${kind}','${jsEsc(id)}')`,'btn btn-ghost')}${own?(m.subscriptionGift?'':button('Редактировать',`kpEditMessage('${kind}','${jsEsc(id)}')`,'btn btn-ghost'))+button('Удалить',`kpDeleteMessage('${kind}','${jsEsc(id)}')`,'btn btn-ghost'):''}</div>`);};
 window.kpReply=(kind,id)=>{const m=messageFrom(kind,id);draft(kind).reply={id,nick:m.nick,text:(m.text||'Вложение').slice(0,180)};window.kpCloseSheet();paintDraft(kind);qs(kind==='dm'?'dmInput':'chatInput').focus();};
 window.kpReact=(kind,id,emoji)=>action('reaction:'+id,async()=>{const data=await rpc('kp_message_v8',{p_action:'reaction',p_kind:kind,p_peer:kind==='dm'?currentDmNick:null,p_id:id,p_data:{emoji}});const cache=kind==='dm'?lastDmMsgs:lastChatMsgs;cache[id]=data;window.kpCloseSheet();rerenderMessages(kind);});
 window.kpEditMessage=(kind,id)=>{const m=messageFrom(kind,id);modal('Редактировать сообщение',`<textarea id="v8EditText" maxlength="4000">${html(m.text||m.caption||'')}</textarea>${button('Сохранить',`kpSaveMessage('${kind}','${jsEsc(id)}')`)}`);qs('v8EditText').focus();};
@@ -15036,7 +15076,7 @@ window.kpDeleteMessage=(kind,id)=>action('delete:'+id,async()=>{
 window.deleteChat=id=>window.kpDeleteMessage('chat',id);window.deleteDm=id=>window.kpDeleteMessage('dm',id);
 window.kpForward=(kind,id)=>{const source=kind==='dm'?`dms/${dmKey(currentNick,currentDmNick)}/messages/${id}`:`chat/${id}`;v8.forwardSource=source;modal('Переслать сообщение',`<label>Получатель<select id="v8ForwardTo"><option value="">Общий чат</option>${Object.entries(allUsersCache||{}).filter(([n])=>n!==currentNick).map(([nick,u])=>`<option value="${html(nick)}">${html(displayNick(u)||nick)}</option>`).join('')}</select></label>${button('Выбрать чат','kpChooseForward()')}`);};
 window.kpChooseForward=async()=>{const nick=qs('v8ForwardTo').value;window.kpCloseSheet();if(nick){switchMsgTab(1);await window.openDmChat(nick);}else switchMsgTab(0);const kind=nick?'dm':'chat';draft(kind).forward={path:v8.forwardSource};paintDraft(kind);};
-const emojiList='😀 😃 😄 😁 😆 😅 😂 🙂 🙃 😉 😊 😍 🥰 😘 😎 🤓 🥳 🤔 🤨 😐 🙄 😴 😢 😭 😡 🤯 😮 😱 🥺 😇 🤝 👍 👎 👏 🙌 ❤️ 💚 💛 💙 🔥 ✨ 🎉 🎂 ☕ 🌿 🐾 🚗 🏠'.split(' ');
+const emojiList='😀 😃 😄 😁 😆 😅 😂 🙂 🙃 😉 😊 😘 😎 🤓 🥳 🤔 🤨 😐 🙄 😴 😢 😭 😡 🤯 😮 😱 🥺 😇 🤝 👍 👎 👏 🙌 🔥 ✨ 🎉 🎂 ☕ 🌿 🐾 🚗 🏠'.split(' ');
 window.toggleEmoji=kind=>{const settings=allUsersCache[currentNick]?.settings||{};modal('Эмодзи и стикеры',`<div class="v8-emoji-grid">${emojiList.map(r=>`<button onclick="kpInsertEmoji('${kind}','${r}')">${r}</button>`).join('')}</div><h3>Мои стикеры</h3><div class="v8-sticker-grid">${(settings.stickers||[]).map((url,i)=>`<button onclick="kpSendSticker('${kind}',${i})"><img src="${html(safeURL(url))}" alt="Стикер" loading="lazy"></button>`).join('')}</div><label class="btn btn-ghost">Добавить свой стикер<input type="file" accept="image/png,image/webp,image/gif" hidden onchange="kpAddSticker(event,'${kind}')"></label><p class="v8-muted">До 24 стикеров, каждый до 1 МБ. PNG, WebP или GIF.</p>`);};
 window.kpInsertEmoji=(kind,r)=>{const input=qs(kind==='dm'?'dmInput':kind==='news'?'newsInput':'chatInput');if(input){input.value+=r;input.focus();}window.kpCloseSheet();};
 window.kpAddSticker=(e,kind)=>action('sticker-add',async()=>{const f=e.target.files[0];if(!f)return;if(!['image/png','image/webp','image/gif'].includes(f.type)||f.size>1024*1024)throw new Error('Стикер: PNG, WebP или GIF до 1 МБ');const settings={...(allUsersCache[currentNick]?.settings||{})},stickers=[...(settings.stickers||[])];if(stickers.length>=24)throw new Error('Максимум 24 стикера');stickers.push(await uploadBlobToStorage(f,'stickers'));settings.stickers=stickers;await update(userRef(currentNick),{settings});allUsersCache[currentNick].settings=settings;window.toggleEmoji(kind);});
@@ -15113,10 +15153,25 @@ async function civic(kind,data={}){const key='civic:'+kind+JSON.stringify(data);
 window.kapaniBuyBikeLicense=()=>action('civic-bike',async()=>{if(!confirm('Купить права на велосипед за 250 ₽?'))return;await civic('bike');window.kapaniRenderLicenses?.();});
 window.kapaniBuyScooterLicense=()=>action('civic-scooter',async()=>{if(!confirm('Подать заявку на экзамен и права за 1 500 ₽? Мэр проверит экзамен. При отказе оплата вернётся.'))return;await civic('scooter');window.kpContactMayor('Здравствуйте! Подал заявку на права на скутер. Хочу пройти экзамен.');});
 window.kapaniBuyKEducation=()=>action('civic-education',async()=>{if(!confirm('Оплатить К-образование за 2 000 ₽ и отправить заявку в мэрию?'))return;await civic('education');});
-window.submitJanitorDone=()=>action('janitor-submit',async()=>{if(!window._janitorProofData)throw new Error('Прикрепите фото выполненной работы');await civic('janitor',{photo:window._janitorProofData,comment:qs('janitorProofComment')?.value.trim()});window._janitorProofData=null;await renderJanitorPage();});
+window.submitJanitorDone=()=>action('janitor-submit',async()=>{
+  if(!window._janitorProofData)throw new Error('Прикрепите фото уборки');
+  const btn=qs('janitorDoneBtn');if(btn)btn.disabled=true;
+  const photo=window._janitorProofData,comment=qs('janitorProofComment')?.value.trim()||'';
+  const key='janitor:'+todayKey()+':'+photo.length+':'+comment;
+  try{
+    await rpc('kp_civic_v8',{p_action:'submit',p_kind:'janitor',p_id:requestID(key),p_data:{photo,comment}});
+    v8.requests.delete(key);
+    window._janitorProofData=null;
+    qs('janitorProofImg')?.removeAttribute('src');
+    if(qs('janitorProofPreview'))qs('janitorProofPreview').style.display='none';
+    if(qs('janitorProofComment'))qs('janitorProofComment').value='';
+    toast('Отчёт отправлен','green');
+    await renderJanitorPage();
+  }finally{if(btn&&window._janitorProofData)btn.disabled=btn.dataset.reportLocked==='true';}
+});
 window.submitPoliceRequest=()=>action('police-request',async()=>{const target=qs('polTarget')?.value.trim(),reason=qs('polReason')?.value.trim();if(qs('polType')?.value==='delete'){const key='police-delete:'+target+':'+reason;await rpc('kp_police_request_delete_v26',{p_id:requestID(key),p_target:target,p_reason:reason});v8.requests.delete(key);toast('Заявка на удаление отправлена мэру','green');}else await civic('police',{target,type:'fine',amount:Number(qs('polAmount')?.value||0),reason});});
 window.submitBizDeleteRequest=()=>action('business-close',async()=>{await civic('business_close',{bizId:_pendingDeleteBizId,reason:qs('bizDeleteReason')?.value.trim()});closeBizDeleteRequestModal();});
-window.kpReviewCivic=(kind,id,accept)=>action('review:'+id,async()=>{const request=kind==='police'?(await get(ref(db,`policeRequests/${id}`))).val():null;if(accept&&kind==='police'&&['delete','freeze'].includes(request?.type)){if(!confirm(`Удалить аккаунт ${request.target} без возможности восстановления?`))return;await rpc('kp_mayor_review_delete_request',{p_id:id});}else await rpc('kp_civic_v8',{p_action:accept?'approve':'reject',p_kind:kind,p_id:id});await window.kpLoadCivic();await renderAdmin();toast('Решение сохранено','green');});
+window.kpReviewCivic=(kind,id,accept)=>action('review:'+id,async()=>{const request=kind==='police'?(await get(ref(db,`policeRequests/${id}`))).val():null;if(accept&&kind==='police'&&['delete','freeze'].includes(request?.type)){if(!confirm(`Удалить аккаунт ${request.target} без возможности восстановления?`))return;await rpc('kp_mayor_review_delete_request',{p_id:id});}else await rpc('kp_civic_v8',{p_action:accept?'approve':'reject',p_kind:kind,p_id:id});toast(accept?'Одобрено':'Отклонено','green');await Promise.all([window.kpLoadCivic(),renderAdmin()]);if(kind==='janitor')void window.kpLoadJanitorWeeks();});
 window.kapaniCloseKEducation=(nick,id='')=>action('education-close:'+nick,async()=>{
     if(currentNick!==ADMIN)throw new Error('Закрывать заявки может только мэр');
     if(!confirm(`Закрыть заявку на К-образование жителя ${nick}? Оплата останется в истории, повторное списание не производится.`))return;
@@ -15126,44 +15181,44 @@ window.kapaniCloseKEducation=(nick,id='')=>action('education-close:'+nick,async(
 });
 window.approvePoliceRequest=id=>window.kpReviewCivic('police',id,true);window.rejectPoliceRequest=id=>window.kpReviewCivic('police',id,false);
 window.adminApproveBizDelete=id=>window.kpReviewCivic('business_close',id,true);window.adminRejectBizDelete=id=>window.kpReviewCivic('business_close',id,false);
-window.kpLoadCivic=async()=>{if(currentNick!==ADMIN)return;let host=qs('v8Civic');if(!host){host=document.createElement('div');host.className='card';host.id='v8Civic';qs('adminPage').prepend(host);}const queues=await Promise.all(['civicRequests','janitorSubmissions','policeRequests','bizDeleteRequests'].map(async branch=>[branch,(await get(ref(db,branch))).val()||{}]));const labels={education:'К-образование',scooter:'Права на скутер',bike:'Права на велосипед',janitor:'Отчёт уборщика',police:'Обращение полиции',business_close:'Закрытие бизнеса'};host.innerHTML='<h2>Единая очередь заявок</h2><p class="v8-muted">Заявки на работу и открытие бизнеса находятся в своих блоках ниже. Решение сохраняется вместе с выплатой или возвратом.</p>'+queues.flatMap(([branch,items])=>Object.entries(items).filter(([,x])=>x.status==='pending').map(([id,x])=>{const kind=x.kind||({janitorSubmissions:'janitor',policeRequests:'police',bizDeleteRequests:'business_close'})[branch];return `<article class="v8-application"><div class="v8-eyebrow">${html(labels[kind]||kind)}</div><h3>${html(x.from||x.worker||x.owner||x.officer)}</h3><p>${html(x.reason||x.comment||'Заявка ожидает проверки')}</p>${x.photo?`<img class="v8-proof" src="${html(safeURL(x.photo))}" alt="Фото отчёта" loading="lazy">`:''}<p>${kind==='janitor'?'Вознаграждение после одобрения: 500 ₽':kind==='scooter'?'Одобрить только после проверки экзамена':kind==='police'?`Житель: ${html(x.target)} · ${x.type==='fine'?money(x.amount):'Удаление аккаунта'}`:''}</p><div class="v8-actions">${button('Одобрить',`kpReviewCivic('${kind}','${jsEsc(id)}',true)`)}${button('Отклонить',`kpReviewCivic('${kind}','${jsEsc(id)}',false)`,'btn btn-ghost')}</div></article>`;})).join('');};
+window.kpLoadCivic=async()=>{if(currentNick!==ADMIN)return;let host=qs('v8Civic');if(!host){host=document.createElement('div');host.className='card';host.id='v8Civic';qs('adminPage').prepend(host);}const queues=await Promise.all(['civicRequests','policeRequests','bizDeleteRequests'].map(async branch=>[branch,(await get(ref(db,branch))).val()||{}]));const labels={education:'К-образование',scooter:'Права на скутер',bike:'Права на велосипед',janitor:'Отчёт уборщика',police:'Обращение полиции',business_close:'Закрытие бизнеса'};host.innerHTML='<h2>Заявки на рассмотрении</h2>'+queues.flatMap(([branch,items])=>Object.entries(items).filter(([,x])=>x.status==='pending').map(([id,x])=>{const kind=x.kind||({janitorSubmissions:'janitor',policeRequests:'police',bizDeleteRequests:'business_close'})[branch];return `<article class="v8-application"><div class="v8-eyebrow">${html(labels[kind]||kind)}</div><h3>${html(x.from||x.worker||x.owner||x.officer)}</h3><p>${html(x.reason||x.comment||'Заявка ожидает проверки')}</p>${x.photo?`<img class="v8-proof" src="${html(safeURL(x.photo))}" alt="Фото отчёта" loading="lazy">`:''}<p>${kind==='scooter'?'Одобрить только после проверки экзамена':kind==='police'?`Житель: ${html(x.target)} · ${x.type==='fine'?money(x.amount):'Удаление аккаунта'}`:''}</p><div class="v8-actions">${button('Одобрить',`kpReviewCivic('${kind}','${jsEsc(id)}',true)`)}${button('Отклонить',`kpReviewCivic('${kind}','${jsEsc(id)}',false)`,'btn btn-ghost')}</div></article>`;})).join('');};
 
+window.kpLoadJanitorWeeks=async()=>{
+  const host=qs('janitorWeeklyPay');
+  if(!host||currentNick!==ADMIN)return;
+  try{
+    const weeks=await rpc('kp_janitor_weeks_v39');
+    if(currentNick!==ADMIN)return;
+    host.innerHTML=weeks.map(w=>{
+      const label=`${html(w.worker)} · неделя с ${html(w.week)} · ${Number(w.approved)} уборок`;
+      return `<div class="kp-janitor-pay-row"><span>${label}</span>${w.paid
+        ?'<strong>Выплачено</strong>'
+        :button('Выплатить',`kpPayJanitorWeek('${jsEsc(w.worker)}','${jsEsc(w.week)}')`,'btn btn-primary btn-sm')}</div>`;
+    }).join('')||'<p>Пока никто не набрал пять уборок.</p>';
+  }catch(e){host.textContent='Не удалось загрузить выплаты';console.warn('[janitor wages]',e);}
+};
+window.kpPayJanitorWeek=(nick,week)=>{
+  const input=prompt(`Сумма выплаты для ${nick} за неделю с ${week}, ₽`);
+  if(input===null)return;
+  return action('janitor-pay:'+nick+':'+week,async()=>{
+    const amount=Number(input.trim());
+    if(!Number.isSafeInteger(amount)||amount<1||amount>1000000)throw new Error('Введите целую сумму от 1 до 1 000 000 ₽');
+    await rpc('kp_pay_janitor_week_v39',{p_target:nick,p_week:week,p_amount:amount});
+    toast('Выплата записана','green');
+    await window.kpLoadJanitorWeeks();
+  });
+};
 window.payoutJanitorSubmission=id=>window.kpReviewCivic('janitor',id,true);window.rejectJanitorSubmission=id=>window.kpReviewCivic('janitor',id,false);
 
 // V10: subscription payments/gifts and news are protected PostgreSQL actions.
 // Browser code must never write balance or privileged branches directly.
-const v10Wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function v10PaymentWindow(label,operation){
-  modal('Оплата подписки',`<div class="v10-payment-stage">
-    <div class="v10-payment-card"><span>Капани Банк</span><strong>Виртуальная карта Капани</strong><small>Оплата капанёвскими деньгами, не банковской картой</small></div>
-    <div class="v10-payment-mark" id="v10PaymentMark"><div class="v10-payment-spinner"></div></div>
-    <h3 id="v10PaymentCaption">Читаем данные карты...</h3>
-    <p class="v8-muted" id="v10PaymentInfo">${html(label)}</p>
-    <div class="v10-payment-progress"><span id="v10PaymentBar"></span></div>
-    <p class="v8-muted">Закрытие окна не отменяет подтверждённую сервером операцию.</p>
+  const sheet=modal('Оплата подписки',`<div class="v10-payment-stage">
+    <div class="v10-payment-mark"><div class="v10-payment-spinner"></div></div>
+    <h3 role="status">Оплачиваем подписку…</h3><p class="v8-muted">${html(label)}</p>
   </div>`);
-  let response=null,failure=null;
-  const pendingOperation=operation().then(value=>{response=value;},error=>{failure=error;});
-  const captions=['Читаем данные карты...','Производим оплату','Почти...','Ещё чуть-чуть'];
-  for(let i=0;i<captions.length;i++){
-    if(failure)break;
-    if(qs('v10PaymentCaption'))qs('v10PaymentCaption').textContent=captions[i];
-    if(qs('v10PaymentBar'))qs('v10PaymentBar').style.width=((i+1)*23)+'%';
-    await v10Wait(1000);
-  }
-  await pendingOperation;
-  if(failure){
-    if(qs('v10PaymentCaption'))qs('v10PaymentCaption').textContent='Оплата не прошла';
-    if(qs('v10PaymentInfo'))qs('v10PaymentInfo').textContent=errorText(failure.message||'Ошибка сервера');
-    qs('v10PaymentMark')?.classList.add('failed');
-    throw failure;
-  }
-  if(qs('v10PaymentCaption'))qs('v10PaymentCaption').textContent='Готово';
-  if(qs('v10PaymentInfo'))qs('v10PaymentInfo').textContent='Сервер подтвердил списание и сохранил подписку';
-  if(qs('v10PaymentBar'))qs('v10PaymentBar').style.width='100%';
-  const mark=qs('v10PaymentMark');if(mark){mark.classList.add('done');mark.innerHTML='<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M15 33l12 12 23-26"/></svg>';}
-  await v10Wait(850);
-  return response;
+  try{return await operation();}
+  finally{if(qs('kpV8Sheet')===sheet)window.kpCloseSheet();}
 }
 window.buySubscription=type=>action('v10-subscription-buy',async()=>{
   if(!['plus','ultra','prime'].includes(type))throw new Error('Неизвестная подписка');
@@ -15173,7 +15228,7 @@ window.buySubscription=type=>action('v10-subscription-buy',async()=>{
   const result=await v10PaymentWindow(name,()=>rpc('kp_subscription_v10',{
     p_action:'buy',p_id:requestID(key),p_plan:type,p_recipient:null
   }));
-  if(!result?.success)throw new Error('Сервер не подтвердил покупку');
+  if(!result?.success)throw new Error('Не удалось оплатить подписку');
   v8.requests.delete(key);
   await refreshBalance();await renderSubscription();
   window.renderMarketplace?.();toast('Подписка оплачена','green');
@@ -15187,10 +15242,11 @@ window.sendGiftSubscription=()=>action('v10-subscription-gift',async()=>{
   const result=await v10PaymentWindow('Подарок '+name,()=>rpc('kp_subscription_v10',{
     p_action:'gift',p_id:requestID(key),p_plan:type,p_recipient:recipient
   }));
-  if(!result?.success)throw new Error('Сервер не подтвердил подарок');
+  if(!result?.success)throw new Error('Не удалось отправить подарок');
   v8.requests.delete(key);
-  closeGiftSubscriptionModal();await refreshBalance();await renderSubscription();
-  toast('Подписка подарена '+recipient,'green');
+  closeGiftSubscriptionModal();window.kpCloseSheet();
+  void refreshBalance();void renderSubscription();
+  toast('Подарок отправлен в личный чат','green');
 });
 window.cancelSubscription=()=>action('v10-subscription-cancel',async()=>{
   if(!confirm('Отключить продление? Оплаченная подписка останется до конца срока.'))return;
@@ -15268,19 +15324,8 @@ window.navTo=function(id,...args){
   if(id==='shop')id='jobs';
   if(id!=='casino')stopCasinoAudio();
   const r=navV7(id,...args);
-  if(id==='adminPage')void action('civic-load',()=>window.kpLoadCivic());
+  if(id==='adminPage'){void action('civic-load',()=>window.kpLoadCivic());void window.kpLoadJanitorWeeks();}
   if(id==='profile')applySettings(allUsersCache[currentNick]?.settings);
-  if(id==='messages'){
-    // Message payloads can contain an obsolete profile photo. Refresh the
-    // user directory whenever the messenger is opened and repaint avatars.
-    void loadAllUsersCache(true).then(()=>{
-      for(const listId of ['chatMessages','dmMessages']){
-        const list=qs(listId);if(list)delete list.dataset.sig;
-      }
-      if(curPage==='messages' && document.querySelector('#msgPanel0.active'))renderChat(lastChatMsgs);
-      if(curPage==='messages' && currentDmNick)renderDmMessages(lastDmMsgs);
-    }).catch(e=>console.warn('[messenger avatars]',e));
-  }
   if(id==='bank'){
     if(qs('v8BankBalance'))qs('v8BankBalance').textContent=money(allUsersCache[currentNick]?.balance);
     void refreshSavingsFromServer();

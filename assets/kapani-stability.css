@@ -1,0 +1,88 @@
+/* Keep controls reachable at intermediate widths and with long resident names. */
+#gHeader .header-actions { flex: 0 1 auto; min-width: 0; }
+#gHeader .h-left { min-width: 0; overflow: hidden; }
+#gHeader .h-left > div:last-child { min-width: 0; }
+#gHeader .h-name, #gHeader .h-job {
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#gHeader .h-bal, #gHeader .h-notify { flex-shrink: 0; }
+#gHeader .header-links {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  overscroll-behavior-inline: contain;
+}
+#gHeader .header-links button { flex: 0 0 auto; }
+#gHeader::before { content: none; }
+@media (min-width: 721px) and (max-width: 1150px) {
+  #gHeader .header-links button { padding-inline: 8px; }
+}
+@media (max-width: 720px) {
+  #gHeader .header-links { display: none; }
+  #gHeader .h-notify { display: grid; place-items: center; min-width: 28px; }
+}
+@media (max-width: 370px) {
+  #gHeader .h-left > div:last-child { display: none; }
+}
+
+.page-wrap > .section:not(.active) { display: none; }
+#gHeader, #bottomNav, .card {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+button, a, [role="button"] { touch-action: manipulation; }
+
+.event-switch { display: flex; gap: .4rem; margin-bottom: 1.25rem; }
+.event-switch button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: .75rem .65rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-weight: 800;
+  color: var(--text);
+  background: var(--surface2);
+}
+.event-switch button[aria-pressed="true"] {
+  background: #315846;
+  color: #f2f8ef;
+  border-color: #80a98d;
+}
+#event-races > button { margin-top: 1rem; }
+#v8Betting .v8-odds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr));
+  gap: .65rem;
+}
+#v8Betting .event-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  min-width: 0;
+  padding: .7rem .85rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.event-choice small, .v8-listing-delivery-name small { display: block; }
+.event-choice b { flex: none; font-variant-numeric: tabular-nums; }
+.event-choice:disabled { opacity: .72; cursor: default; }
+#v8Betting .v8-event h3, .resident-description, #profileDescription, #vpfDescription {
+  overflow-wrap: anywhere;
+}
+.resident-description, #profileDescription, #vpfDescription { white-space: pre-wrap; }
+.resident-description { margin: .5rem auto; line-height: 1.4; }
+.kp-janitor-progress { display: grid; gap: .5rem; margin-top: 1rem; }
+.kp-janitor-progress progress { width: min(100%, 22rem); accent-color: #7aac85; }
+.kp-janitor-pay-row { display: flex; align-items: center; gap: .65rem; flex-wrap: wrap; margin-top: .65rem; }
+.kp-subscription-gift {
+  display: grid;
+  gap: .2rem;
+  padding: .65rem .8rem;
+  background: #213c2b;
+  color: #edf6eb;
+  border: 1px solid #557458;
+  border-radius: 10px;
+}

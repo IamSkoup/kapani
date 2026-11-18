@@ -88,7 +88,7 @@ test('bank receipt waits for journal confirmation',main.includes('const journalR
 test('DM index uses actual existing messages', dmAndEducation.includes("root->conv->'messages'") && dmAndEducation.includes("jsonb_build_object('lastTs',ts,'latest',last_message)"));
 test('DM index repair authenticated for participants', dmAndEducation.includes("if a is null or p_peer is null or p_peer=a") && dmAndEducation.includes('public.kp_v8_actor()'));
 test('DM deletion and reindex are atomic in SQL', main.includes("await rpc('kp_dm_delete_v13',{p_peer:peer,p_id:id})") && dmAndEducation.includes("perform public.kp_message_v8('delete','dm',p_peer,p_id") && dmAndEducation.includes('return public.kp_dm_reindex_v13(p_peer)'));
-test('DM preview corrected from canonical messages on reopen', main.includes('refreshDmPreviewsFromMessages(force=false)') && main.includes('dmVerifiedPreviews.set(peer,truth)'));
+test('DM preview reads canonical index without opening every conversation', main.includes("addServiceListener('messages','dmInbox'") && !main.includes('refreshDmPreviewsFromMessages'));
 test('education closure only mayor', dmAndEducation.includes("if a is distinct from 'Кайон'") && dmAndEducation.includes('Mayor access required'));
 test('education closure preserves payment and prevents repurchase', dmAndEducation.includes("'status','approved','closedAt'") && index.includes("'paid','submitted','approved'"));
 test('education closure button present in mayor panel', index.includes('kapaniCloseKEducation(') && index.includes('Закрыть заявку'));
@@ -108,9 +108,8 @@ test('subscription has server-signed wallet settlement', subscriptionNews.includ
 test('subscription retries are recorded uniquely', subscriptionNews.includes('kp_v10_subscription_ops') && subscriptionNews.includes('Subscription retry mismatch'));
 test('subscription never edits protected balance in active handler', main.includes("window.buySubscription=type=>action('v10-subscription-buy'") &&
   main.includes("kp_subscription_v10") && main.includes("window.sendGiftSubscription=()=>action('v10-subscription-gift'"));
-test('success tick shown only after RPC result', main.includes('await pendingOperation;') && main.includes("if(failure){") &&
-  main.includes("mark.classList.add('done')"));
-test('all payment captions present', ['Читаем данные карты','Производим оплату','Почти','Ещё чуть-чуть','Готово'].every(s => main.includes(s)));
+test('payment progress follows the purchase request', main.includes('try{return await operation();}') &&
+  main.includes('Оплачиваем подписку…') && !main.includes('const v10Wait'));
 test('news publication uses protected RPC', main.includes("rpc('kp_news_publish_v15'") &&
   sql.includes('function public.kp_news_publish_v15(') && subscriptionNews.includes("if p_action='publish'"));
 test('news comments use protected RPC', main.includes("p_action:'comment_send'") && subscriptionNews.includes("elsif p_action='comment_edit'"));
@@ -120,7 +119,7 @@ test('doctor booking gives actionable errors', sql.includes('Cannot book an appo
   sql.includes('Hospital service is disabled') && main.includes('Нельзя записаться на приём к самому себе'));
 test('hospital panel loads protected view', main.includes("supabase.rpc('kp_hospital_view')") && main.includes("renderHospitalPanelServices(data?.services"));
 test('hospital service buttons are explicit', main.includes("'Включить':'Отключить'") && main.includes('>Изменить</button>'));
-test('casino wallet requires successful backend operation', main.includes("const result=await casinoRpc(kind,") && main.includes('Сервер не подтвердил изменение игрового баланса'));
+test('casino wallet requires successful backend operation', main.includes("const result=await casinoRpc(kind,") && main.includes('Не удалось обновить игровой счёт'));
 test('desktop sheets center in viewport', css.includes('#kpV8Sheet.v8-overlay') && css.includes('justify-content:center!important') && css.includes('align-items:center!important'));
 test('casino overlay ignores the global 640px max-width', css.includes('width:100vw!important;max-width:none!important;') && css.includes('min-width:100vw!important;height:100dvh!important;'));
 test('push prompt has green gradient, never old red', (main.includes('background:linear-gradient(145deg,#1d4a33') || tourCss.includes('background: linear-gradient(145deg, #19432f')) && !main.includes('max-width:490px;background:#170b10'));
@@ -133,7 +132,7 @@ test('other dialogs receive centered full-screen roots', css.includes('#userProf
 test('inline handlers escape double and single quotes', main.includes('onclick="${html(click)}"') && main.includes('function button(label,click'));
 test('profile desktop and mobile layouts', css.includes('#profile.section.active') && css.includes('grid-template-columns:repeat(2,minmax(0,1fr))') && css.includes('grid-template-columns:1fr!important'));
 test('passport and gift gradients', css.includes('#passportFormModal > div') && css.includes('#giftSubModal > div'));
-test('marketplace search remains functional', main.includes('v8MarketSearch') && main.includes('`${l.title} ${l.desc} ${l.address||\'\'}`'));
+test('marketplace search remains functional', main.includes('v8MarketSearch') && main.includes('[l.title,l.desc,l.address,l.seller].some'));
 test('buyer retains visibility of paid listing', main.includes("l.status!=='sold' || l.category==='service' || l.buyer===currentNick"));
 test('sold listing cannot restart purchase negotiation', main.includes("!l.status||l.status==='active'"));
 test('listing delivery button only for fully purchased goods', main.includes("l.buyer===currentNick&&l.status==='sold'&&point(l.sellerLat,l.sellerLng)"));

@@ -21,7 +21,7 @@ assert.match(tour,/root\.addEventListener\('cancel'/);
 assert.match(main,/localStorage\.getItem\(pendingKey\) === '1'\) return true/);
 assert.match(fixture,/src="\.\.\/index\.html"/);
 assert.match(deliveryFixture,/length:1000/);
-assert.match(deliveryFixture,/renderDeliveryOrderOptions\(\)/);
+assert.match(deliveryFixture,/await actions\.render\(\)/);
 assert.match(html,/kapani-onboarding\.js\?v=38/);
 
 const start=main.indexOf('const deliveryCatalogView=');
@@ -29,7 +29,7 @@ const end=main.indexOf('window.renderDeliveryOrderOptions=renderDeliveryOrderOpt
 assert.ok(start>0&&end>start,'paginated catalogue is present');
 const entries=Array.from({length:1000},(_,i)=>({id:`id-${i}`,title:`Товар ${i}`,seller:'Продавец',price:150+i,status:'active'}));
 const nodes={v8DeliveryCatalogItems:{innerHTML:''},v8DeliveryCatalogPages:{innerHTML:''}};
-const ctx={window:{},qs:id=>nodes[id],deliveryMarketplaceOptions:()=>entries,html:v=>String(v),jsEsc:v=>v,money:v=>`${v} ₽`,button:(label)=>`<button>${label}</button>`,Math,String};
+const ctx={window:{},qs:id=>nodes[id],deliveryMarketplaceOptions:()=>entries,canRequestDeliveryListing:()=>true,html:v=>String(v),jsEsc:v=>v,money:v=>`${v} ₽`,button:(label)=>`<button>${label}</button>`,Math,String};
 vm.runInNewContext(main.slice(start,end)+'this.paintDirectory=paintDeliveryMarketplaceDirectory;',ctx);
 ctx.paintDirectory();
 assert.equal((nodes.v8DeliveryCatalogItems.innerHTML.match(/class="v8-listing-delivery"/g)||[]).length,8,'only eight cards rendered');

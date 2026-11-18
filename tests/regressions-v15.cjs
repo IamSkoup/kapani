@@ -39,7 +39,7 @@ const end=main.indexOf('// ─── WORKER PAGES',start);
 assert.ok(start>=0&&end>start);
 const els=Object.fromEntries(['workerTaxiList','workerDeliveryList','workerJanitorList'].map(id=>[id,{innerHTML:''}]));
 const u={jobs:['Водитель','Доставщик']};
-const ctx={
+const ctx={allUsersCache:{},
   qs:id=>els[id]||null,
   get:async()=>({exists:()=>true,val:()=>u}),
   userRef:n=>n,currentNick:'tester',

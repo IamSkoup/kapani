@@ -111,8 +111,40 @@ async function treeCall(operation, r, payload = null, expected = null) {
   return data || {};
 }
 
+const treeReads = new Map();
+const branchReadVersions = new Map();
+
 async function get(reference) {
-  const result = await treeCall('read', reference);
+  const branch = branchOf(reference.path);
+  const version = branchReadVersions.get(branch) || 0;
+  const options = reference.queryOptions || [];
+  const limit = options.find(option => option.type === 'limitLast')?.count;
+  const boundedChat = limit > 0 && options.every(option =>
+    option.type === 'limitLast' || (option.type === 'order' && option.name === 'createdAt')
+  ) && (reference.path === 'chat' || /^dms\/[^/]+\/messages$/.test(reference.path));
+  const readChat = boundedChat || /^dmIndex\/[^/]+$/.test(reference.path);
+  const key = JSON.stringify([reference.path, version, readChat ? limit || 80 : null]);
+  let pending = treeReads.get(key);
+  if (!pending) {
+    pending = (async () => {
+      if (reference.path==='users/.summary') {
+        const {data,error}=await supabase.rpc('kp_live_users_v39');
+        if(error)throw new Error(error.message);
+        return {value:data};
+      }
+      if (!readChat) return treeCall('read', reference);
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),10000);
+      const {data,error} = await supabase.rpc('kp_chat_read_v39', {
+        p_path: reference.path, p_limit: limit || 80
+      }).abortSignal(controller.signal).then(result=>result).finally(()=>clearTimeout(timeout));
+      if (error?.code === 'PGRST202') return treeCall('read', reference);
+      if (error) throw new Error(error.message || 'Не удалось загрузить чат');
+      return {value:data};
+    })().finally(() => treeReads.delete(key));
+    treeReads.set(key,pending);
+  }
+  const result = await pending;
   return new TreeSnapshot(reference, applyFilters(result.value ?? null, reference.queryOptions), result.revision);
 }
 
@@ -194,6 +226,7 @@ async function runTransaction(reference, updater) {
 // Supabase Realtime broadcasts only root revision numbers. It never exposes
 // private tree JSON to all subscribed users.
 function notifyLocal(branch) {
+  branchReadVersions.set(branch,(branchReadVersions.get(branch)||0)+1);
   const channel = rootChannels.get(branch);
   if (channel) channel.refresh();
 }
@@ -201,17 +234,17 @@ function channelFor(branch) {
   let existing = rootChannels.get(branch);
   if (existing) return existing;
   const channel = supabase.channel(`kapani-tree-${branch}`);
-  let pending = false;
+  let pending = null;
   let seenRevision = null;
   let checkingRevision = false;
   existing = {
     count: 0,
     channel,
     refresh() {
-      if (pending) return;
-      pending = true;
-      queueMicrotask(() => {
-        pending = false;
+      if (pending !== null) return;
+      pending = setTimeout(() => {
+        pending = null;
+        branchReadVersions.set(branch,(branchReadVersions.get(branch)||0)+1);
         for (const [key, entry] of watchers) {
           if (branchOf(entry.reference.path) !== branch) continue;
           const sequence = ++entry.sequence;
@@ -219,9 +252,9 @@ function channelFor(branch) {
             if (watchers.get(key) === entry && entry.sequence === sequence) entry.callback(snapshot);
           }).catch(entry.onError);
         }
-      });
+      },80);
     },
-    stop() { clearInterval(this.pollTimer); }
+    stop() { clearInterval(this.pollTimer); clearTimeout(pending); }
   };
   channel.on('postgres_changes', {
     event: '*', schema: 'public', table: 'kp_tree_revisions', filter: `branch=eq.${branch}`
@@ -234,7 +267,7 @@ function channelFor(branch) {
   // Realtime can disconnect without a visible error on mobile networks. A
   // small revision check keeps conversations and worker order lists current
   // without downloading their full trees on every timer tick.
-  if (['chat','dms','orders','deliveryCustomOrders'].includes(branch)) {
+  if (['chat','dms','dmIndex','users','orders','deliveryCustomOrders'].includes(branch)) {
     existing.pollTimer = setInterval(async () => {
       if (existing.count === 0 || globalThis.document?.visibilityState === 'hidden' || checkingRevision) return;
       checkingRevision = true;
@@ -250,7 +283,7 @@ function channelFor(branch) {
         // is unavailable; the caller's error handler reports a failed read.
         existing.refresh();
       } finally { checkingRevision = false; }
-    }, 4000);
+    }, branch==='users'?12000:5000);
   }
   return existing;
 }

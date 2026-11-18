@@ -32,7 +32,7 @@
   function classify(card) {
     const has = selector => !!card.querySelector(selector);
     if (has('#adminStats')) return 'overview';
-    if (has('#unverifiedAccounts,#appList,#janitorAdminList,#adminBizApps,#adminBizDeleteReqs,#adminAtmRequests,#kapaniScooterApps,#kapaniKEducationApps,#adminDeputyProposals,#adminPoliceReqs')) return 'requests';
+    if (has('#unverifiedAccounts,#appList,#janitorAdminList,#janitorWeeklyPay,#adminBizApps,#adminBizDeleteReqs,#adminAtmRequests,#kapaniScooterApps,#kapaniKEducationApps,#adminDeputyProposals,#adminPoliceReqs')) return 'requests';
     if (has('#allUsersList,#adminTarget,#adminForceHireTarget,#kveTarget,#adminLicenseStatus')) return 'residents';
     if (has('#kapaniTreasuryBalance,#adminOrders,#adminAdvertiserStats')) return 'economy';
     if (has('#adminRentBuildings,#adminRacesList,#adminDayGroupsList,#raceDayUserSelect')) return 'city';

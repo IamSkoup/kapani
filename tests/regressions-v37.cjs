@@ -8,10 +8,11 @@ const root=path.resolve(__dirname,'..');
 const main=fs.readFileSync(path.join(root,'assets/kapani-main-classic.js'),'utf8');
 const tourCss=fs.readFileSync(path.join(root,'assets/kapani-onboarding.css'),'utf8');
 
-const selectSource=main.match(/deliveryMarketplaceOptions=\(\)=>[^;]+;/)?.[0];
+const selectSource=main.slice(main.indexOf('const deliveryListingOpen='),main.indexOf('const optionsV7='));
 assert.ok(selectSource,'marketplace selector override exists');
 const market={
   available:{id:'available',title:'Bike',status:'active',category:'electronics',seller:'seller',sellerLat:52,sellerLng:39,price:3000},
+  legacy:{title:'Old listing',category:'other',seller:'seller'},
   paid:{id:'paid',title:'Bought',status:'sold',category:'other',seller:'seller',buyer:'buyer'},
   pending:{id:'pending',status:'meeting_requested',category:'other',seller:'seller',buyer:'buyer'},
   service:{id:'service',status:'active',category:'service',seller:'seller'},
@@ -22,8 +23,8 @@ const market={
 const ctx={lastMarketListings:market,currentNick:'buyer',Object,Number};
 vm.runInNewContext('let deliveryMarketplaceOptions;'+selectSource+'this.options=deliveryMarketplaceOptions;',ctx);
 const ids=ctx.options().map(x=>x.id);
-assert.deepEqual(ids,['available','paid','pending']);
-assert.match(main,/if\(listing\.status==='active'\)throw new Error\('Сначала договоритесь с продавцом/);
+assert.deepEqual(ids,['available','legacy','paid','pending','own']);
+assert.match(main,/if\(deliveryListingOpen\(listing\)\)throw new Error\('Сначала договоритесь с продавцом/);
 assert.match(main,/if\(listing\.status!=='sold'\|\|listing\.buyer!==currentNick\)/);
 
 const start=main.indexOf("window.kpCreateEvent=()=>action('event-create'");
@@ -36,7 +37,7 @@ const scope={
   qs:id=>({value:fields[id]}),requestID:()=> '00000000-0000-4000-8000-000000000001',
   rpc:async(name,data)=>{calls.push({name,data});return{ok:true};},
   action:async(_,fn)=>{try{return await fn();}catch(e){messages.push(e.message);}},
-  toast(){},Number,Date,Object,JSON
+  toast(){},eventViews:new Map(),currentNick:'buyer',Number,Date,Object,JSON
 };
 vm.runInNewContext(main.slice(start,end),scope);
 (async()=>{

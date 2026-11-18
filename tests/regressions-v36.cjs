@@ -37,8 +37,8 @@ assert.match(css,/\.kp-first-visit-launcher\[hidden\]/);
 assert.match(main,/for\(let attempt=0;attempt<2;attempt\+\+\)/,'bank retries idempotent reads');
 assert.match(main,/renderRecentTransfers\(\)/);
 assert.match(main,/Сайт открыт как локальный файл/,'file protocol diagnostic');
-assert.match(sw,/kapani-static-v38/);
-assert.match(index,/kapani-main-classic\.js\?v=38/);
+assert.ok(Number(sw.match(/kapani-static-v(\d+)/)?.[1])>=38);
+assert.ok(Number(index.match(/kapani-main-classic\.js\?v=(\d+)/)?.[1])>=38);
 assert.ok(installer.includes(sql.trim()),'installer contains v31 migration');
 
 console.log('OK: mayor order removal, referral recovery, displayed jobs, onboarding and bank retries.');

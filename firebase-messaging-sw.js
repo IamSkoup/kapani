@@ -1,20 +1,23 @@
 /* Kapani Web Push Service Worker.
  * One Service Worker only: receives standard Web Push and renders system notifications.
  */
-const SW_VERSION = 'kapani-pwa-2026-11-11-v37';
+const SW_VERSION = 'kapani-pwa-v39';
 const KAPANI_APP_PATH = '/kapani/';
-const KAPANI_STATIC_CACHE = 'kapani-static-v38';
+const KAPANI_STATIC_CACHE = 'kapani-static-v39';
 const KAPANI_STATIC_PREFIX = 'kapani-static-';
 const KAPANI_APP_SHELL = [
   './', './index.html', './config.js', './manifest.json',
   './assets/icon-192.png', './assets/icon-512.png',
-  './assets/kapani-main-classic.js?v=38',
-  './assets/supabase-bridge-classic.js?v=17&rev=27',
+  './assets/kapani-main-classic.js?v=39',
+  './assets/supabase-bridge-classic.js?v=39',
   './assets/kapani-v28.css?v=28',
   './assets/kapani-onboarding.js?v=38',
   './assets/kapani-onboarding.css?v=38',
   './assets/kapani-delivery-directory.css?v=38',
-  './assets/kapani-casino-performance.css?v=30'
+  './assets/kapani-casino-performance.css?v=39',
+  './assets/kapani-stability.css?v=39',
+  './assets/kapani-pack-classic.js?v=39', './assets/kapani-icons.js?v=39',
+  './assets/kapani-ui.js?v=39', './assets/kapani-finishes.js?v=39'
 ];
 
 function isPublicStaticRequest(request) {
