@@ -17,6 +17,9 @@
   const frame=document.getElementById('realApp'),status=document.getElementById('result');
   frame.addEventListener('load',async()=>{
     const win=frame.contentWindow,doc=frame.contentDocument;
+    doc.getElementById('deliveryOrderSource').value='marketplace';
+    doc.getElementById('deliveryMarketplaceBlock').style.display='grid';
+    doc.getElementById('deliveryBusinessBlock').style.display='none';
     const auth=doc.getElementById('authSection');if(auth){auth.style.display='none';auth.classList.remove('active');}
     const loading=doc.getElementById('loadingOverlay');if(loading)loading.style.display='none';
     const main=doc.getElementById('mainApp');if(main)main.style.display='block';
@@ -31,16 +34,17 @@
         id:String(n),title:'Товар '+(n+1),seller:'Продавец',category:'other',
         status:'active',price:500+n,createdAt:1000+n
       }));
-      const script=await (await fetch('../assets/kapani-main-classic.js?v=38',{cache:'no-store'})).text();
+      const appScript=doc.querySelector('script[src*="kapani-main-classic"]').src;
+      const script=await (await fetch(appScript,{cache:'no-store'})).text();
       const start=script.indexOf('const deliveryCatalogView=');
       const end=script.indexOf('window.kpDeliveryRequestListing=',start);
       if(start<0||end<0)throw Error('Не найден код каталога');
       const escape=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const makeButton=(title,handler)=>`<button type="button" class="btn btn-ghost btn-sm" onclick="${handler}">${title}</button>`;
-      const run=new Function('qs','deliveryMarketplaceOptions','html','escHtml','jsEsc','money','button',
+      const run=new Function('qs','deliveryMarketplaceOptions','html','escHtml','jsEsc','money','button','canRequestDeliveryListing',
         `let renderDeliveryOrderOptions;const window={renderDeliveryOrderOptions:async()=>{}};const optionsV7=window.renderDeliveryOrderOptions;${script.slice(start,end)};
          return {render:window.renderDeliveryOrderOptions,filter:window.kpDeliveryCatalogFilter,page:window.kpDeliveryCatalogPage}`);
-      const actions=run(id=>doc.getElementById(id),()=>listings,escape,escape,escape,v=>v+' ₽',makeButton);
+      const actions=run(id=>doc.getElementById(id),()=>listings,escape,escape,escape,v=>v+' ₽',makeButton,item=>item.status==='active');
       win.kpDeliveryCatalogFilter=actions.filter;
       win.kpDeliveryCatalogPage=actions.page;
       win.kpDeliveryForListing=()=>{};

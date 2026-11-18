@@ -49,6 +49,6 @@ const normalRpc=factory({rpc:(name,args)=>({abortSignal:async signal=>{
   })})},fn=>{queueMicrotask(fn);return 1;},()=>{});
   await assert.rejects(slowRpc('play',{p_id:'stable-id'}),/Повторите(?: действие)? с той же суммой/);
   const emptyRpc=factory({rpc:()=>({abortSignal:async()=>({data:null,error:null})})},setTimeout,clearTimeout);
-  await assert.rejects(emptyRpc('view'),/Нет подтверждения сервера/);
+  await assert.rejects(emptyRpc('view'),/Операция пока не подтверждена/);
   console.log('OK: revision 30 casino request timeout, stable retry IDs, lazy audio, single DOM build, lightweight game sheets.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
