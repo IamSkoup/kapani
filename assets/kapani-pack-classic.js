@@ -464,7 +464,7 @@ ready(function(){
       const st = r.status==='approved'?'✅ Одобрено':r.status==='rejected'?'❌ Отклонено':'⏳ Ожидает';
       const col = r.status==='approved'?'#22c55e':r.status==='rejected'?'var(--red)':'var(--gold)';
       return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px;margin-bottom:6px;font-size:12px;">
-        <b>${r.type==='fine'?'💸 Штраф':'🗑 Удаление'}</b> · ${escHtml(r.target)}${r.amount?' · '+r.amount+'₽':''}
+        <b>${r.type==='fine'?'Штраф':r.type==='freeze'?'Заморозка':'Удаление'}</b> · ${escHtml(r.target)}${r.amount?' · '+r.amount+'₽':''}
         <div style="color:var(--muted);margin-top:4px;">${escHtml(r.reason||'')}</div>
         <div style="color:${col};font-weight:800;margin-top:4px;">${st}</div>
       </div>`;
@@ -500,7 +500,7 @@ ready(function(){
     if(!pending.length){ el.innerHTML='<div style="color:var(--muted);font-size:13px;">Нет запросов</div>'; return; }
     el.innerHTML = pending.map(r=>`
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-bottom:8px;">
-        <div style="font-size:13px;"><b>${r.type==='fine'?'💸 Штраф':'🗑 Удаление'}</b> · от <b>${escHtml(r.officer)}</b> на <b>${escHtml(r.target)}</b>${r.amount?' · '+r.amount+'₽':''}</div>
+        <div style="font-size:13px;"><b>${r.type==='fine'?'Штраф':r.type==='freeze'?'Заморозка':'Удаление'}</b> · от <b>${escHtml(r.officer)}</b> на <b>${escHtml(r.target)}</b>${r.amount?' · '+r.amount+'₽':''}</div>
         <div style="font-size:12px;color:var(--muted);margin:6px 0;">${escHtml(r.reason||'')}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-primary btn-sm" onclick="approvePoliceRequest('${jsEsc(r.id)}')">✅ Одобрить</button>

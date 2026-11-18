@@ -1,4 +1,4 @@
--- Run against a seeded Kapani database after migration 032. All fixture changes are rolled back.
+-- Run against a seeded Kapani database after migrations 032–033. All fixture changes are rolled back.
 begin;
 do $test$
 declare
@@ -40,7 +40,18 @@ begin
   perform public.kp_subscription_v10('gift',gift,'plus','TempJanitorV39');
   perform public.kp_subscription_v10('gift',gift,'plus','TempJanitorV39');
 
+  perform public.kp_civic_v8('submit','police','temp-v39-freeze',
+    '{"type":"freeze","target":"TempJanitorV39","reason":"Fixture for legacy freeze"}');
   perform set_config('request.jwt.claim.sub',mayor::text,true);
+  failed:=false;
+  begin perform public.kp_mayor_review_delete_request('temp-v39-freeze');
+  exception when others then failed:=sqlerrm='Pending deletion request not found';end;
+  if not failed then raise exception 'Account deletion accepted a freeze request';end if;
+  perform public.kp_civic_v8('approve','police','temp-v39-freeze','{}');
+  if not exists(select 1 from public.kp_profiles where user_id=worker)
+    or (public.kp_tree_access('read','users/TempJanitorV39')#>>'{value,accountFrozen}') is distinct from 'true' then
+    raise exception 'Freeze did not preserve the account';end if;
+  update public.kp_tree_roots set document=jsonb_set(document,'{TempJanitorV39,accountFrozen}','false') where branch='users';
   data:=public.kp_civic_v8('approve','janitor','temp-v39-report','{}');
   if data->>'status'<>'approved' or (select balance from public.kp_wallets where user_id=worker)<>start_balance then
     raise exception 'Report approval must not pay wages';
