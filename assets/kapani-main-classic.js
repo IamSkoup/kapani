@@ -361,6 +361,25 @@ let allUsersCacheLoaded = false;
 let allUsersCachePromise = null;
 let lastChatMsgs = {};
 let lastDmMsgs = {};
+// Local outbox is separate from authoritative realtime snapshots.
+const kapaniChatOutbox = new Map();
+function kapaniOutboxKey(kind, peer = currentDmNick){return JSON.stringify([currentNick,kind,kind==='dm'?peer:null]);}
+function kapaniMergeOutbox(kind, messages){
+    const key=kapaniOutboxKey(kind), pending=kapaniChatOutbox.get(key);
+    if(!pending?.size) return messages||{};
+    const merged={...(messages||{})};
+    for(const [id,entry] of pending){
+        if(merged[id]?.nick===entry.sender){pending.delete(id);continue;}
+        merged[id]={...entry.message,_kpSendStatus:entry.status};
+    }
+    if(!pending.size)kapaniChatOutbox.delete(key);
+    return merged;
+}
+function kapaniOutboxStatus(kind,id,m){
+    if(m._kpSendStatus==='failed')return `<div class="chat-time" style="color:#ffadad">Не отправлено · <button type="button" class="btn btn-ghost btn-sm" onclick="kpRetryOutgoing('${kind}','${jsEsc(id)}')">Повторить</button></div>`;
+    if(m._kpSendStatus==='sent')return '<div class="chat-time">✓ Отправлено</div>';
+    return '<div class="chat-time" style="color:var(--muted)">Отправляется…</div>';
+}
 let pendingPhotoQueues = { chat: [], dm: [] };
 let vcFacingMode = 'user';
 let chatLoading = false;
@@ -1629,9 +1648,9 @@ window.handleAuth = async function() {
             localStorage.setItem('kp_auth', JSON.stringify({ nick, name: nameInput, displayName: nameInput }));
             currentNick = nick;
             allUsersCache[nick]=createdUser;
-            allUsersCacheLoaded=true;
+            // A newly registered account is not a complete resident directory.
+            allUsersCacheLoaded=false;
             window.allUsersCache=allUsersCache;
-            renderHomeStats_users(allUsersCache);
             _kapaniSessionPassword = password;
             syncCurrentNick();
             await ensureAuth();
@@ -1673,6 +1692,7 @@ window.handleAuth = async function() {
             try {
                 await pushNotification(ADMIN, `🆕 Новый аккаунт: ${nameInput}`, 'system');
             } catch(e){ console.warn('[new account notification]', e); }
+            void loadAllUsersCache().then(()=>refreshLiveUsersUI()).catch(e=>console.warn('[Kapani registration directory]',e));
             toast('🎉 Добро пожаловать в Капани! Ваш аккаунт ожидает подтверждения мэрией.','green');
             startApp();
         } else {
@@ -2251,7 +2271,11 @@ function refreshLiveUsersUI(){
     try{
         renderHomeStats_users(users);
         if(curPage==='ratings') renderLeaderboard(users);
-        else if(curPage==='messages'){ if(document.querySelector('#msgPanel1.active')) renderDmUserList(users); }
+        else if(curPage==='messages'){
+            if(document.querySelector('#msgPanel0.active')) renderChat(lastChatMsgs);
+            else if(currentDmNick) renderDmMessages(lastDmMsgs);
+            else renderDmUserList(users);
+        }
         else if(curPage==='adminPage'){ renderAdminUsers(users); renderAdminUserSelect(users); renderUnverifiedAccounts(); }
     }catch(e){ console.warn('[Kapani live] users UI refresh:',e?.message||e); }
 }
@@ -2373,7 +2397,7 @@ function syncWatchedProfile(){
 function startLiveDataLayer(){
     if(_liveLayerStarted||!currentNick) return;
     _liveLayerStarted=true;
-    loadAllUsersCache().then(()=>{ _liveUsersLastFull=Date.now(); syncLiveUserListeners(); }).catch(e=>console.debug('[Kapani live] users init:',e?.message||e));
+    loadAllUsersCache().then(()=>{ _liveUsersLastFull=Date.now(); syncLiveUserListeners(); refreshLiveUsersUI(); }).catch(e=>console.debug('[Kapani live] users init:',e?.message||e));
     registerInterval('liveUsersFullRefresh',setInterval(()=>{ if(Date.now()-_liveUsersLastFull>=LIVE_USERS_FULL_REFRESH_MS-1000) refreshUsersStructure(); },30000));
     registerInterval('liveWatchedProfile',setInterval(syncWatchedProfile,1200));
     document.addEventListener('visibilitychange',()=>{
@@ -5512,6 +5536,7 @@ window.openDmChat=async function(nick){
     // previous chat are ignored and can no longer replace the new chat.
     const openSeq = (window._dmOpenSeq = (window._dmOpenSeq || 0) + 1);
     currentDmNick = nick;
+    lastDmMsgs = {};
     Promise.resolve(set(ref(db,`presence/${currentNick}/dmOpenWith`),nick)).catch(e=>console.warn('[Kapani DM presence]',e));
     dmPeerReadTs = 0;
 
@@ -5926,6 +5951,10 @@ async function renderVisitorProfilePage(nick){
     // Apply profile background + avatar frame with the same mappings as the own profile.
     const profileBgEffect = qs('vpfProfileBgEffect');
     if(profileBgEffect){
+        // Keep the wallpaper above the opaque header background, below its content.
+        const header = profileBgEffect.closest('.profile-header');
+        if(header) header.style.isolation = 'isolate';
+        profileBgEffect.style.zIndex = '0';
         profileBgEffect.classList.remove(...PROFILE_EFFECT_CLASSES);
         const bgClass = getProfileBgClass(u);
         if(bgClass) profileBgEffect.classList.add(bgClass);
@@ -12319,7 +12348,7 @@ window.renderChat = async function(msgs){
     // Debounce render for performance on iPhone
     if(_chatRenderPending) {
         if(_chatRenderTimeout) clearTimeout(_chatRenderTimeout);
-        _chatRenderTimeout = setTimeout(() => renderChat(msgs), 50);
+        _chatRenderTimeout = setTimeout(() => renderChat(lastChatMsgs), 50);
         return;
     }
     
@@ -12328,8 +12357,8 @@ window.renderChat = async function(msgs){
     requestAnimationFrame(() => {
       try {
         const scroll = preserveScrollState(el);
-        const entries = Object.entries(lastChatMsgs).sort((a,b)=>(a[1]?.createdAt||0)-(b[1]?.createdAt||0)).slice(-60);
-        const sig = entries.map(([id,m])=>`${id}:${m.createdAt||0}:${m.text||''}:${m.msgType||''}:${m.mediaData?1:0}:${m.edited?1:0}:${JSON.stringify(m.attachments||[])}:${JSON.stringify(m.reactions||{})}:${JSON.stringify(m.reply||{})}:${String(safeAvatar(m.nick,m.avatar)).slice(-80)}`).join('|') + '|r:' + JSON.stringify(chatReadStates||{});
+        const entries = Object.entries(kapaniMergeOutbox('chat',lastChatMsgs)).sort((a,b)=>(a[1]?.createdAt||0)-(b[1]?.createdAt||0)).slice(-60);
+        const sig = entries.map(([id,m])=>`${id}:${m.createdAt||0}:${m.text||''}:${m.msgType||''}:${m.mediaData?1:0}:${m.edited?1:0}:${JSON.stringify(m.attachments||[])}:${JSON.stringify(m.reactions||{})}:${JSON.stringify(m.reply||{})}:${String(safeAvatar(m.nick,m.avatar)).slice(-80)}:${m._kpSendStatus||''}`).join('|') + '|r:' + JSON.stringify(chatReadStates||{});
         if(el.dataset.sig === sig && !el.textContent.includes('Загрузка чата...')) return;
         
         // Get current user's chat bubble style
@@ -12386,10 +12415,10 @@ window.renderChat = async function(msgs){
                         ${!isMe ? `<div class="chat-sender" style="cursor:pointer;" onclick="openUserProfile('${jsEsc(m.nick)}')">${escHtml(displayNick(allUsersCache[m.nick]) || m.nick)}</div>` : ''}
                         ${replyPreviewHtml(m)}
                         <div onclick="event.stopPropagation()">${mediaHtml(m)}</div>${edited}
-                        <div class="chat-time">${escHtml(m.time||'')}</div>${readLine}
+                        <div class="chat-time">${escHtml(m.time||'')}</div>${m._kpSendStatus?kapaniOutboxStatus('chat',msgId,m):readLine}
                     </div>
-                    ${msgActionsHtml('chat', msgId, m, isMe)}
-                    ${msgEditHtml('chat', msgId, m)}
+                    ${m._kpSendStatus?'':msgActionsHtml('chat', msgId, m, isMe)}
+                    ${m._kpSendStatus?'':msgEditHtml('chat', msgId, m)}
                 </div>
             </div>`;
         }).join('');
@@ -12445,17 +12474,18 @@ window.renderDmMessages = async function(msgs){
     // Debounce render for performance on iPhone
     if(_dmRenderPending) {
         if(_dmRenderTimeout) clearTimeout(_dmRenderTimeout);
-        _dmRenderTimeout = setTimeout(() => renderDmMessages(msgs), 50);
+        _dmRenderTimeout = setTimeout(() => {if(currentDmNick)renderDmMessages(lastDmMsgs);}, 50);
         return;
     }
     
     _dmRenderPending = true;
-    
+    const renderPeer = currentDmNick;
     requestAnimationFrame(async () => {
         try {
+        if(!renderPeer || renderPeer!==currentDmNick)return;
         const scroll = preserveScrollState(el);
-        const entries = Object.entries(lastDmMsgs).sort((a,b)=>(a[1]?.createdAt||0)-(b[1]?.createdAt||0)).slice(-80);
-        const sig = entries.map(([id,m])=>`${id}:${m.createdAt||0}:${m.text||''}:${m.msgType||''}:${m.mediaData?1:0}:${m.edited?1:0}:${JSON.stringify(m.attachments||[])}:${JSON.stringify(m.reactions||{})}:${JSON.stringify(m.reply||{})}`).join('|') + '|peer:' + String(dmPeerReadTs || 0);
+        const entries = Object.entries(kapaniMergeOutbox('dm',lastDmMsgs)).sort((a,b)=>(a[1]?.createdAt||0)-(b[1]?.createdAt||0)).slice(-80);
+        const sig = entries.map(([id,m])=>`${id}:${m.createdAt||0}:${m.text||''}:${m.msgType||''}:${m.mediaData?1:0}:${m.edited?1:0}:${JSON.stringify(m.attachments||[])}:${JSON.stringify(m.reactions||{})}:${JSON.stringify(m.reply||{})}:${String(safeAvatar(m.nick,m.avatar)).slice(-80)}:${m._kpSendStatus||''}`).join('|') + '|peer:' + String(dmPeerReadTs || 0);
         if(el.dataset.sig === sig){ _dmRenderPending = false; return; }
         el.dataset.sig = sig;
         // Get current user's chat bubble style
@@ -12506,10 +12536,10 @@ window.renderDmMessages = async function(msgs){
                     <div class="${bubbleClass}" id="bubble_${jsEsc(msgId)}">
                         ${replyPreviewHtml(m)}
                         <div onclick="event.stopPropagation()">${mediaHtml(m)}</div>${edited}
-                        <div class="chat-time">${escHtml(m.time||'')}</div>${readLine}
+                        <div class="chat-time">${escHtml(m.time||'')}</div>${m._kpSendStatus?kapaniOutboxStatus('dm',msgId,m):readLine}
                     </div>
-                    ${msgActionsHtml('dm', msgId, m, isMe)}
-                    ${msgEditHtml('dm', msgId, m)}
+                    ${m._kpSendStatus?'':msgActionsHtml('dm', msgId, m, isMe)}
+                    ${m._kpSendStatus?'':msgEditHtml('dm', msgId, m)}
                 </div>
             </div>`;
         }).join('');
@@ -15023,7 +15053,88 @@ window.kpRemoveAttachment=(kind,i)=>{const d=draft(kind),f=d.files.splice(i,1)[0
 window.kpClearReply=kind=>{draft(kind).reply=null;paintDraft(kind);};window.kpClearForward=kind=>{draft(kind).forward=null;paintDraft(kind);};
 const oldMediaFile=window.handleMediaFile;
 window.handleMediaFile=async(e,kind)=>{if(!['chat','dm'].includes(kind))return oldMediaFile(e,kind);const key=draftKey(kind),d=draft(kind),files=Array.from(e.target.files||[]);e.target.value='';await action('attachments:'+key,async()=>{if(d.files.length+files.length>6)throw new Error('В одном сообщении можно отправить до 6 вложений');for(const file of files){const type=file.type.startsWith('video/')?'video':file.type.startsWith('image/')?'image':null;if(!type)throw new Error('Выберите фото или видео');if(file.size>(type==='video'?20:10)*1024*1024)throw new Error(type==='video'?'Видео должно быть меньше 20 МБ':'Фото должно быть меньше 10 МБ');let blob=file;if(type==='image'){const data=await compressImage(file,1600,.84);blob=await(await fetch(data)).blob();}d.files.push({blob,type,preview:URL.createObjectURL(blob)});}if(draftKey(kind)===key)paintDraft(kind);});};
-async function sendDraft(kind){const peer=kind==='dm'?currentDmNick:null;if(kind==='dm'&&!peer)return;const key=draftKey(kind),d=draft(kind),input=qs(kind==='dm'?'dmInput':'chatInput'),text=input.value.trim();if(!text&&!d.files.length&&!d.forward)return;if(text.length>4000)throw new Error('Сообщение: максимум 4 000 символов');await action('send:'+key,async()=>{for(const file of d.files){if(!file.url)file.url=await uploadBlobToStorage(file.blob,'messages');}const payload={text,attachments:d.files.map(f=>({type:f.type,url:f.url})),...(d.reply?{replyId:d.reply.id}:{}),...(d.forward?{forward:d.forward}:{})};await rpc('kp_message_v8',{p_action:'send',p_kind:kind,p_peer:peer,p_id:d.id,p_data:payload});if(draftKey(kind)===key)input.value='';for(const f of d.files)if(f.preview?.startsWith('blob:'))URL.revokeObjectURL(f.preview);v8.drafts.delete(key);if(draftKey(kind)===key)paintDraft(kind);if(peer)void pushNotification(peer,`${currentNick}: ${text.slice(0,80)||'Вложение'}`,'messages').catch(console.warn);else void enqueuePushJob({type:'chat',id:d.id,sender:currentNick});});}
+const outgoingQueues=new Map();
+function refreshOutgoing(entry,scroll=false){
+    if(currentNick!==entry.sender || (entry.kind==='dm' && currentDmNick!==entry.peer))return;
+    const host=qs(entry.kind==='dm'?'dmMessages':'chatMessages');
+    if(entry.kind==='dm')window.renderDmMessages(lastDmMsgs);else window.renderChat(lastChatMsgs);
+    if(scroll && host)requestAnimationFrame(()=>requestAnimationFrame(()=>{if(currentNick===entry.sender && (entry.kind==='chat'||currentDmNick===entry.peer))host.scrollTop=host.scrollHeight;}));
+}
+function queueOutgoing(entry){
+    if(entry.running)return entry.promise;
+    entry.running=true;
+    entry.status='pending';
+    refreshOutgoing(entry);
+    const previous=outgoingQueues.get(entry.key)||Promise.resolve();
+    const job=previous.catch(()=>{}).then(async()=>{
+        try{
+            if(currentNick!==entry.sender)throw new Error('Сменился аккаунт');
+            for(const f of entry.draft.files){
+                if(!f.url)f.url=await uploadBlobToStorage(f.blob,'messages');
+            }
+            const attachments=entry.draft.files.map(f=>({type:f.type,url:f.url}));
+            const payload={text:entry.text,attachments,...(entry.draft.reply?{replyId:entry.draft.reply.id}:{}),...(entry.draft.forward?{forward:entry.draft.forward}:{})};
+            // Keep the same client ID across retries so a lost response cannot duplicate a message.
+            const result=await rpc('kp_message_v8',{p_action:'send',p_kind:entry.kind,p_peer:entry.peer,p_id:entry.id,p_data:payload});
+            entry.message={...entry.message,attachments,...(result?.nick===entry.sender?result:{})};
+            entry.status='sent';
+            for(const f of entry.draft.files)if(f.preview?.startsWith('blob:'))URL.revokeObjectURL(f.preview);
+            if(entry.peer)void pushNotification(entry.peer,`${entry.sender}: ${entry.text.slice(0,80)||'Вложение'}`,'messages').catch(console.warn);
+            else void enqueuePushJob({type:'chat',id:entry.id,sender:entry.sender});
+            // Realtime normally reconciles by message ID. The bounded read also
+            // refreshes an open conversation when its push event is delayed.
+            if(currentNick===entry.sender){
+                const target=entry.kind==='dm'?dmRef(dmKey(entry.sender,entry.peer)):chatRef();
+                void get(query(target,orderByChild('createdAt'),limitToLast(entry.kind==='dm'?80:60))).then(snap=>{
+                    if(currentNick!==entry.sender)return;
+                    const messages=snap.val()||{};
+                    if(messages[entry.id]?.nick!==entry.sender)return;
+                    const pending=kapaniChatOutbox.get(entry.key);
+                    pending?.delete(entry.id);
+                    if(pending&&!pending.size)kapaniChatOutbox.delete(entry.key);
+                    if(entry.kind==='dm'){
+                        if(currentDmNick===entry.peer)window.renderDmMessages({...lastDmMsgs,[entry.id]:messages[entry.id]});
+                    }else window.renderChat({...lastChatMsgs,[entry.id]:messages[entry.id]});
+                }).catch(()=>{});
+            }
+        }catch(e){
+            entry.status='failed';
+            console.warn('[Kapani outgoing message]',e);
+        }finally{
+            entry.running=false;
+            refreshOutgoing(entry);
+        }
+    });
+    outgoingQueues.set(entry.key,job);
+    entry.promise=job;
+    void job.finally(()=>{if(outgoingQueues.get(entry.key)===job)outgoingQueues.delete(entry.key);});
+    return job;
+}
+window.kpRetryOutgoing=(kind,id)=>{
+    const entry=kapaniChatOutbox.get(kapaniOutboxKey(kind))?.get(id);
+    if(entry?.status==='failed')return queueOutgoing(entry);
+};
+function sendDraft(kind){
+    const peer=kind==='dm'?currentDmNick:null;
+    if(!currentNick || (kind==='dm'&&!peer))return;
+    const key=draftKey(kind),d=draft(kind),input=qs(kind==='dm'?'dmInput':'chatInput'),text=input?.value.trim()||'';
+    if(!input||(!text&&!d.files.length&&!d.forward))return;
+    if(text.length>4000)return toast('Сообщение: максимум 4 000 символов','red');
+    const sender=currentNick,outKey=kapaniOutboxKey(kind,peer),createdAt=Date.now();
+    const entry={key:outKey,kind,peer,sender,id:d.id,draft:d,text,status:'pending',
+        message:{nick:sender,avatar:safeAvatar(sender),text,time:nowTime(),createdAt,
+            attachments:d.files.map(f=>({type:f.type,url:f.url||f.preview})),
+            ...(d.reply?{reply:d.reply}:{}),...(d.forward?{forwardedFrom:d.forward.nick||''}:{})}};
+    if(!kapaniChatOutbox.has(outKey))kapaniChatOutbox.set(outKey,new Map());
+    kapaniChatOutbox.get(outKey).set(entry.id,entry);
+    // Clear only this submitted draft; typing the next one is never blocked.
+    input.value='';
+    v8.drafts.delete(key);
+    paintDraft(kind);
+    if(kind==='dm')setDmTypingState('idle');else setChatTypingState('idle');
+    refreshOutgoing(entry,true);
+    return queueOutgoing(entry);
+}
 window.sendChat=()=>sendDraft('chat');window.sendDm=()=>sendDraft('dm');
 // Recorded media follows the same explicit send step as selected attachments.
 sendChatMsg=async function(text,mediaData,msgType){if(mediaData){draft('chat').files.push({url:mediaData,preview:mediaData,type:msgType});paintDraft('chat');return;}qs('chatInput').value=text||'';return sendDraft('chat');};
