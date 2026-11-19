@@ -14802,15 +14802,15 @@ window.kapaniRenderCasino=async()=>{
   // Keep the same game-card DOM across visits: reconstructing SVGs and layered
   // cards on every navigation causes expensive paint/compositor allocations.
   if(host.dataset.kpCasinoBuilt!=='1'||!host.querySelector('#v8CasinoBalance')){
-    host.innerHTML=`<div class="v8-casino-top"><h2>Казино</h2>
+    host.innerHTML=`<div class="v8-casino-top"><h2>Казино</h2><button type="button" class="v8-music-control" onclick="kpCasinoMusic()" id="v8MusicButton" aria-label="Фоновая музыка" aria-pressed="false">Музыка: выкл.</button>
       <button class="v8-balance" onclick="kpCasinoWallet()"><small>Игровой счёт</small><strong id="v8CasinoBalance">—</strong></button></div>
       <div class="v8-game-grid">${Object.entries(games).map(([id,g])=>`<button class="v8-game-card" onclick="kpOpenGame('${id}')">
         <img src="assets/casino-${g.art}.webp" alt="" width="510" height="340" loading="lazy" decoding="async"><div><h3>${g.title}</h3></div></button>`).join('')}</div>
       <div id="v8CasinoError" role="status"></div>
       <p class="v8-muted">Игровые деньги Капани. Ставка до 1 000 ₽.</p>
-      <details class="v8-credits"><summary>Лимиты и музыка</summary>
+      <details class="v8-credits"><summary>Лимиты и сведения о музыке</summary>
         <p>Пополнение до 10 000 ₽ в день. Сумма ставок до 20 000 ₽ в день.</p>
-        <button class="btn btn-ghost btn-sm" onclick="kpCasinoMusic()" id="v8MusicButton">Включить музыку</button>
+        
         <p>«Backbay Lounge», Kevin MacLeod. <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.</p></details>`;
     host.dataset.kpCasinoBuilt='1';
   }
@@ -14886,13 +14886,13 @@ window.kpPlayGame=()=>action('casino-op',async()=>{
 let casinoAudio=null;
 function stopCasinoAudio(){
   if(casinoAudio){casinoAudio.pause();casinoAudio.removeAttribute('src');casinoAudio.load();casinoAudio=null;}
-  const button=qs('v8MusicButton');if(button)button.textContent='Включить музыку';
+  const button=qs('v8MusicButton');if(button){button.textContent='Музыка: выкл.';button.setAttribute('aria-pressed','false');}
 }
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopCasinoAudio();});
 window.kpCasinoMusic=async()=>{
   if(casinoAudio&&!casinoAudio.paused){stopCasinoAudio();return;}
   if(!casinoAudio){casinoAudio=new Audio();casinoAudio.preload='none';casinoAudio.src='assets/backbay-lounge.mp3';casinoAudio.loop=true;casinoAudio.volume=.22;}
-  try{await casinoAudio.play();const button=qs('v8MusicButton');if(button)button.textContent='Выключить музыку';}
+  try{await casinoAudio.play();const button=qs('v8MusicButton');if(button){button.textContent='Музыка: вкл.';button.setAttribute('aria-pressed','true');}}
   catch(error){stopCasinoAudio();toast('Не удалось воспроизвести музыку','gold');}
 };
 // Disable all old public casino entrypoints, even if an old link is retained.

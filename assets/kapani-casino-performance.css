@@ -62,3 +62,14 @@
 #casino .v8-game-card h3 { margin: 0; }
 #casino .v8-game-card:hover img { transform: none; }
 .v8-game-stage.playing > img { animation: none; }
+
+/* Consistent card layout and accessible audio control. */
+#casino .v8-game-grid { align-items: stretch; }
+#casino .v8-game-card { display: grid; grid-template-rows: auto 1fr; align-items: stretch; align-content: start; min-width: 0; }
+html #casino .v8-game-card > img { display: block; box-sizing: border-box; width: 100% !important; height: auto !important; max-height: none !important; aspect-ratio: 3 / 2; object-fit: contain !important; object-position: center; padding: 0 !important; margin: 0 !important; }
+#casino .v8-game-card > div { min-width: 0; padding: .65rem .8rem; }
+#casino .v8-game-card h3 { overflow-wrap: anywhere; }
+#casino .v8-casino-top { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; }
+#casino .v8-music-control { min-height: 44px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font: inherit; font-size: 12px; line-height: 1.2; cursor: pointer; text-align: center; }
+#casino .v8-music-control:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+@media (max-width: 420px) { #casino .v8-casino-top { gap: 6px; } #casino .v8-casino-top h2 { font-size: 20px; } #casino .v8-music-control { max-width: 78px; padding: 7px; font-size: 11px; } #casino .v8-balance { padding: 8px; } #casino .v8-balance small { font-size: 9px; } }
