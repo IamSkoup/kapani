@@ -2025,8 +2025,8 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
         <button class="btn btn-ghost btn-sm" type="button" onclick="closeVisitorProfile()" style="flex-shrink:0;">← Назад</button>
         <div style="font-weight:900;font-size:15px;flex:1;">👤 Профиль</div>
     </div>
-    <div class="profile-header" style="margin-bottom:14px;position:relative;">
-        <div id="vpfProfileBgEffect" style="position:absolute;inset:0;pointer-events:none;z-index:-1;overflow:hidden;border-radius:var(--r);"></div>
+    <div class="profile-header" style="margin-bottom:14px;position:relative;isolation:isolate;">
+        <div id="vpfProfileBgEffect" style="position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden;border-radius:var(--r);"></div>
         <div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;">
             <div id="vpfAvWrap" style="position:relative;display:inline-block;">
                 <img id="vpfAv" class="p-av" style="cursor:pointer;" onclick="openImgViewer(this.src)" alt=""><video id="vpfAvVideo" class="p-av" style="cursor:pointer;position:absolute;inset:0;display:none;object-fit:cover;border-radius:26px;" muted autoplay loop playsinline onclick="openVideoViewer(this.currentSrc||this.src)"></video>
@@ -2878,7 +2878,7 @@ window.kapaniLoadLeaflet = (function(){
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8" defer></script>
 <script src="./assets/supabase-bridge-classic.js?v=39" defer></script>
 <script src="./assets/kapani-onboarding.js?v=38" defer></script>
-<script src="./assets/kapani-main-classic.js?v=41" defer></script>
+<script src="./assets/kapani-main-classic.js?v=42" defer></script>
 
 <script>
 // ═══════════════════════════════════════════════════
