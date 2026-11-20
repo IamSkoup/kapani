@@ -518,6 +518,7 @@ function stopAllActivity() {
 let taxiMap = null, fromMarker = null, toMarker = null, routeLine = null;
 let selectingPoint = null;
 let fromCoords = null, toCoords = null;
+let taxiQuote = null, updateTaxiCalc;
 let shopMapObj = null, shopMarker = null, shopAddrCoords = null;
 let currentDmNick = null;
 let dmListeners = {};
@@ -4411,7 +4412,12 @@ window.initTaxiMap=async function(){
 function onMapClick(e){if(!selectingPoint)return;const{lat,lng}=e.latlng;if(selectingPoint==='from'){setFromPoint(lat,lng);reverseGeocode(lat,lng).then(name=>{qs('tFrom').value=name;qs('tFrom').dispatchEvent(new Event('input',{bubbles:true}));});}else{setToPoint(lat,lng);reverseGeocode(lat,lng).then(name=>{qs('tTo').value=name;qs('tTo').dispatchEvent(new Event('input',{bubbles:true}));});}selectingPoint=null;qs('btnFromMap').classList.remove('selecting');qs('btnToMap').classList.remove('selecting');}
 function setFromPoint(lat,lng){fromCoords={lat,lng};if(fromMarker)taxiMap.removeLayer(fromMarker);fromMarker=L.marker([lat,lng],{icon:L.divIcon({className:'wood-map-pin',html:'<span>А</span>',iconSize:[34,34],iconAnchor:[17,17]})}).addTo(taxiMap).bindPopup('📍 Откуда');updateTaxiCalc();}
 function setToPoint(lat,lng){toCoords={lat,lng};if(toMarker)taxiMap.removeLayer(toMarker);toMarker=L.marker([lat,lng],{icon:L.divIcon({className:'wood-map-pin',html:'<span>Б</span>',iconSize:[34,34],iconAnchor:[17,17]})}).addTo(taxiMap).bindPopup('🏁 Куда');updateTaxiCalc();}
-function updateTaxiCalc(){if(!fromCoords||!toCoords)return;const dist=haversine(fromCoords.lat,fromCoords.lng,toCoords.lat,toCoords.lng);const price=Math.round(dist*PRICE_PER_KM);const timeMin=Math.ceil(dist/MAX_SPEED_KMH*60);qs('tDist').textContent=dist.toFixed(1);qs('tTime').textContent=timeMin;qs('tPrice').textContent=price;qs('taxiInfoRow').style.display='flex';qs('btnCallTaxi').disabled=false;if(routeLine)taxiMap.removeLayer(routeLine);routeLine=L.polyline([[fromCoords.lat,fromCoords.lng],[toCoords.lat,toCoords.lng]],{color:'#f0444a',weight:3,dashArray:'6,6'}).addTo(taxiMap);taxiMap.fitBounds([[fromCoords.lat,fromCoords.lng],[toCoords.lat,toCoords.lng]],{padding:[30,30]});}
+function drawTaxiRoute(){
+    const stops=[[fromCoords.lat,fromCoords.lng],[toCoords.lat,toCoords.lng]];
+    if(routeLine)taxiMap.removeLayer(routeLine);
+    routeLine=L.polyline(stops,{color:'#b2ff9e',weight:3,dashArray:'6,6'}).addTo(taxiMap);
+    taxiMap.fitBounds(stops,{padding:[30,30]});
+}
 window.startSelectPoint=function(which){selectingPoint=which;qs('btnFromMap').classList.toggle('selecting',which==='from');qs('btnToMap').classList.toggle('selecting',which==='to');toast(which==='from'?'📍 Кликните — отправление':'🏁 Кликните — назначение','gold');};
 window.detectMyLocation=function(){if(!navigator.geolocation)return toast('❌ Геолокация недоступна','red');toast('📍 Определяем...','gold');navigator.geolocation.getCurrentPosition(pos=>{const{latitude:lat,longitude:lng}=pos.coords;setFromPoint(lat,lng);reverseGeocode(lat,lng).then(name=>{qs('tFrom').value=name;qs('tFrom').dispatchEvent(new Event('input',{bubbles:true}));});taxiMap.setView([lat,lng],16);},()=>toast('❌ Нет геолокации','red'));};
 async function reverseGeocode(lat,lon){try{const res=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=ru`);const d=await res.json();if(d&&d.address){const a=d.address;return[a.road||a.pedestrian||a.hamlet,a.village||a.town||a.city||a.suburb].filter(Boolean).join(', ')||d.display_name.split(',').slice(0,2).join(', ');}}catch(e){}return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;}
@@ -4428,7 +4434,7 @@ window.orderTaxi=async function(){
     if(taxiBtn){ taxiBtn.disabled = true; taxiBtn.textContent = '⏳ Оформляем…'; }
     try {
     if(!await requireSpendable())return;
-    const from=qs('tFrom').value.trim(),to=qs('tTo').value.trim(),basePrice=parseInt(qs('tPrice').textContent)||0,dist=parseFloat(qs('tDist').textContent)||0;
+    const from=qs('tFrom').value.trim(),to=qs('tTo').value.trim(),basePrice=taxiQuote?.price||0,dist=taxiQuote?.distanceKm||0;
     if(!from||!to)return toast('⚠️ Укажите маршрут','gold');if(basePrice<=0)return toast('⚠️ Выберите точки','gold');
     
     // Apply subscription discount
@@ -14553,33 +14559,35 @@ window.doctorCompleteAppointment=id=>action('hospital:'+id,async()=>{await servi
 
 // Map-first taxi. Coordinates are selected in order and the price is recomputed
 // independently by PostgreSQL. There are no arbitrary address suggestions.
-['tFrom','tTo'].forEach(id=>{const el=qs(id);if(el){el.readOnly=true;el.removeAttribute('onkeydown');el.placeholder=id==='tFrom'?'1. Выберите, откуда вас забрать':'2. Выберите, куда поехать';}});
-let taxiQuote=null,taxiQuoteSerial=0;
+let taxiQuoteSerial=0;
 const taxiCoordinates=()=>fromCoords&&toCoords?[fromCoords.lat,fromCoords.lng,toCoords.lat,toCoords.lng]:null;
-const taxiFormula=document.createElement('div');
-taxiFormula.id='v9FareMethod';
-taxiFormula.className='v9-fare-explain';
-taxiFormula.textContent='Тариф 250 ₽/км. Расстояние между отметками на карте по прямой, не по автомобильным дорогам.';
-qs('taxiInfoRow')?.after(taxiFormula);
-const calcTaxiBeforeV9=updateTaxiCalc;
+const taxiFormula=qs('v9FareMethod');
+qs('woodTaxiRate').textContent=money(PRICE_PER_KM)+' / км';
+function renderTaxiEstimate(quote){
+  const price=quote?money(quote.price):'—';
+  const time=quote?'≈ '+Math.ceil(quote.distanceKm/MAX_SPEED_KMH*60)+' мин':'—';
+  qs('tPrice').textContent=qs('woodTaxiPrice').textContent=price;
+  qs('tTime').textContent=qs('woodTaxiTime').textContent=time;
+  qs('tDist').textContent=quote?quote.distanceKm.toLocaleString('ru-RU',{maximumFractionDigits:2}):'';
+  qs('woodTaxiDistance').hidden=!quote;
+}
 updateTaxiCalc=function(){
-  calcTaxiBeforeV9();
   const coords=taxiCoordinates();
   taxiQuote=null;const sequence=++taxiQuoteSerial;
+  renderTaxiEstimate(null);
   if(!coords)return;
-  if(qs('btnCallTaxi'))qs('btnCallTaxi').disabled=true;
+  drawTaxiRoute();
+  qs('btnCallTaxi').disabled=true;
   taxiFormula.textContent='Рассчитываем стоимость…';
   rpc('kp_service_quote_v8',{p_kind:'taxi',p_from_lat:coords[0],p_from_lng:coords[1],p_to_lat:coords[2],p_to_lng:coords[3]}).then(quote=>{
     if(sequence!==taxiQuoteSerial)return;
-    taxiQuote={coords:coords.join(','),price:Number(quote.price)};
-    qs('tDist').textContent=Number(quote.distanceKm).toFixed(2);
-    qs('tPrice').textContent=String(quote.price);
-    if(qs('btnCallTaxi'))qs('btnCallTaxi').disabled=false;
-    taxiFormula.textContent='Цена рассчитана: '+money(quote.price)+'.';
+    taxiQuote={coords:coords.join(','),price:Number(quote.price),distanceKm:Number(quote.distanceKm)};
+    renderTaxiEstimate(taxiQuote);
+    qs('btnCallTaxi').disabled=false;
+    taxiFormula.textContent='';
   }).catch(e=>{
     if(sequence!==taxiQuoteSerial)return;
     taxiFormula.textContent='Не удалось рассчитать стоимость: '+errorText(e.message);
-    if(qs('btnCallTaxi'))qs('btnCallTaxi').disabled=true;
   });
 };
 const initMapV7=window.initTaxiMap;window.initTaxiMap=async()=>{const map=await initMapV7();if(!fromCoords){selectingPoint='from';qs('btnFromMap')?.classList.add('selecting');}return map;};

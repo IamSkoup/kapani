@@ -323,16 +323,18 @@ html[data-season] #bottomNav .bn-item:hover {
 .wood-steps li[aria-current] { color: white; }
 .wood-steps li[aria-current] span { color: #e0ffe3; border-color: #a1faa8; background: #1c6839; box-shadow: 0 0 14px #60e57847; }
 .wood-order-layout { display: grid; grid-template-columns: minmax(0,1.65fr) minmax(260px,1fr); align-items: stretch; gap: 18px; margin-bottom: 18px; }
+#mainApp > #taxi { max-width: 1280px !important; }
 #taxi #taxiForm { max-width: none; }
 #taxi #taxiForm:not([style*="display: none"]):not([style*="display:none"]) { display: grid !important; }
 .wood-order-layout > .card { margin: 0; }
 .wood-order-aside { display: flex; flex-direction: column; gap: 12px; }
 .wood-order-aside > .btn { margin-top: auto !important; min-height: 50px; font-size: clamp(15px,1.33vw,21px); }
-#taxi #taxiMap { height: clamp(280px,25vw,410px); background: #0b2c1b; }
-#taxiMap .leaflet-overlay-pane path[stroke="#f0444a"] { stroke: #b2ff9e; }
-.wood-map-pin {
+#taxi #taxiMap { height: clamp(230px,30dvh,420px) !important; background: #0b2c1b; }
+/* Leaflet loads its marker display rules after the page styles. */
+#taxiMap .wood-map-pin {
   display: grid;
   place-items: center;
+  box-sizing: border-box;
   border: 2px solid #b0fcb1;
   border-radius: 50%;
   color: #e9ffeb;
@@ -340,16 +342,36 @@ html[data-season] #bottomNav .bn-item:hover {
   box-shadow: 0 0 12px #87fc91a3;
   font: 700 16px/1 Arial,sans-serif;
 }
-#taxi .taxi-point-row { padding: 7px 9px; background: #103522be; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; }
-#taxi .taxi-point-row input { border-color: transparent !important; min-width: 0; padding-inline: 7px; }
-#taxi .taxi-point-btn { flex: none; background: #16482b; color: #d8f8db; border-color: #4f875d; }
-#taxi .wood-route-summary { display: grid; gap: 19px; padding: 17px; background: #103522be; border: 1px solid #2e583f; border-radius: 13px; }
-.wood-route-summary > div { display: flex; align-items: center; gap: 12px; }
-.wood-route-summary small { display: block; color: var(--muted); }
-.wood-route-summary strong { display: block; overflow-wrap: anywhere; line-height: 1.35; }
-#taxi .taxi-info-row { margin-bottom: 8px; }
-#taxi .taxi-info-box { min-width: 0; padding-inline: 5px; }
-#taxi .taxi-info-box .tiv { font-size: clamp(16px,1.55vw,24px); overflow-wrap: anywhere; }
+#taxi .taxi-point-row { gap: 10px; padding: 7px 9px; background: #103522be; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; }
+#taxi .taxi-point-row .wood-point-letter { color: #092719; background: #85e58b; border-color: transparent; }
+#taxi .taxi-point-row:nth-of-type(2) .wood-point-letter { background: #58cb70; }
+.wood-taxi-field { flex: 1; min-width: 0; }
+.wood-taxi-field > span { display: block; font-size: 13px; font-weight: 700; line-height: 1.3; }
+.wood-taxi-field small { color: var(--muted); font-size: inherit; font-weight: 400; }
+#taxi .wood-taxi-field input { margin: 0; padding: 0; min-height: 24px; border: 0 !important; background: transparent; font-size: clamp(14px,1.1vw,18px); }
+#taxi .wood-taxi-field input::placeholder { color: var(--muted); }
+#taxi .taxi-point-btn { flex: 0 0 44px; background: #16482b; color: #d8f8db; border-color: #4f875d; }
+#taxiForm .wood-order-aside { gap: 16px; }
+#taxiForm .wood-order-aside .card-title { margin: 0; font: 700 clamp(23px,1.85vw,31px)/1.15 Georgia,serif; }
+#taxi .wood-route-summary { display: grid; gap: 17px; padding: clamp(12px,1.5vw,22px); background: #103522be; border: 1px solid #2e583f; border-radius: 13px; }
+.wood-taxi-stops, .wood-taxi-estimate { display: grid; gap: 15px; }
+.wood-taxi-stops > div, .wood-taxi-estimate > div { display: flex; align-items: center; gap: 13px; min-width: 0; }
+.wood-taxi-stops .wood-point-letter { position: relative; border-color: #7ee087; background: #135432; }
+.wood-taxi-stops > div:first-child .wood-point-letter::after { content: ''; position: absolute; inset-block-start: calc(100% + 3px); height: 19px; border-inline-start: 1px dashed #7ee087; }
+.wood-route-summary small, .wood-taxi-strip small { display: block; font-size: clamp(12px,.95vw,15px); color: var(--muted); }
+.wood-route-summary strong { display: block; overflow-wrap: anywhere; line-height: 1.25; font-size: clamp(15px,1.18vw,20px); }
+.wood-taxi-estimate { border-top: 1px solid var(--border); padding-top: 16px; }
+.wood-taxi-estimate .wood-icon, .wood-taxi-strip .wood-icon { font-size: 23px; color: var(--primary); }
+.wood-taxi-estimate strong { font-size: clamp(24px,2vw,34px); font-variant-numeric: tabular-nums; }
+.wood-taxi-estimate #tPrice { font-size: clamp(30px,2.45vw,42px); }
+.wood-taxi-estimate p, .wood-taxi-status { margin: 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.wood-taxi-status:empty { display: none; }
+.wood-taxi-strip { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); padding: 10px 0; background: #103522be; border: 1px solid var(--border); border-radius: 12px; }
+.wood-taxi-strip > div { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; padding-inline: 5px; }
+.wood-taxi-strip > div + div { border-inline-start: 1px solid var(--border); }
+.wood-taxi-strip b { display: block; font-size: clamp(14px,1.16vw,20px); overflow-wrap: anywhere; }
+#taxiForm #btnCallTaxi { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: clamp(56px,5vw,82px); padding-inline: 10px; white-space: nowrap; font-size: clamp(19px,1.62vw,27px); }
+.wood-taxi-help { grid-column: 1/-1; justify-self: center; margin: 0; padding: 9px 16px; text-align: center; color: var(--muted); font-size: 13px; border: 1px solid var(--border); border-radius: 12px; background: var(--wood-panel); }
 
 .wood-source-buttons { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 0 0 14px; }
 .wood-source-buttons .btn { min-height: 50px; text-align: center; white-space: normal; }
@@ -571,6 +593,9 @@ html[data-season] #home .quick-card .qico { background: var(--wood-raised); colo
   .wood-steps { gap: 5px; padding: 9px 5px; margin-bottom: 12px; }
   .wood-steps li { flex-direction: column; gap: 4px; padding-inline: 3px; text-align: center; font-size: 12px; }
   .wood-steps span { width: 28px; height: 28px; }
+  #taxi .taxi-point-row { gap: 6px; }
+  .wood-taxi-strip > div { flex-direction: column; gap: 4px; text-align: center; }
+  .wood-taxi-strip .wood-icon { font-size: 17px; }
   .wood-delivery-address { grid-template-columns: 1fr; gap: 6px; }
   #tasks .task-item { flex-wrap: wrap; }
   #tasks .task-main { flex-basis: 100%; }

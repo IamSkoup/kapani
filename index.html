@@ -1234,7 +1234,7 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 <link rel="stylesheet" href="assets/kapani-delivery-directory.css?v=38">
 <link rel="stylesheet" href="assets/kapani-casino-performance.css?v=41">
 <link rel="stylesheet" href="assets/kapani-stability.css?v=39">
-<link rel="stylesheet" href="assets/kapani-woodland.css?v=1">
+<link rel="stylesheet" href="assets/kapani-woodland.css?v=2">
 </head>
 <body>
 <div id="woodBackdrop" aria-hidden="true"></div>
@@ -1728,29 +1728,39 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
       <div class="card wood-order-form">
         <div id="taxiMap"></div>
         <div class="taxi-point-row">
-            <span class="wood-point-letter" aria-hidden="true">А</span><input type="text" id="tFrom" aria-label="Откуда, точка посадки" placeholder="Откуда — точка посадки" style="margin:0;" required minlength="3" maxlength="100" onkeydown="if(event.key==='Enter')geocodeFrom()">
+            <span class="wood-point-letter" aria-hidden="true">А</span>
+            <label class="wood-taxi-field"><span>Откуда <small>(точка посадки)</small></span><input type="text" id="tFrom" placeholder="Укажите место на карте" readonly></label>
             <button class="taxi-point-btn" id="btnFromGeo" aria-label="Моё местоположение" title="Моё местоположение" onclick="detectMyLocation()">📍</button>
             <button class="taxi-point-btn" id="btnFromMap" aria-label="Выбрать точку посадки на карте" title="Выбрать точку посадки на карте" onclick="startSelectPoint('from')">🗺</button>
         </div>
         <div class="taxi-point-row">
-            <span class="wood-point-letter" aria-hidden="true">Б</span><input type="text" id="tTo" aria-label="Куда, пункт назначения" placeholder="Куда — пункт назначения" style="margin:0;" required minlength="3" maxlength="100" onkeydown="if(event.key==='Enter')geocodeTo()">
+            <span class="wood-point-letter" aria-hidden="true">Б</span>
+            <label class="wood-taxi-field"><span>Куда <small>(пункт назначения)</small></span><input type="text" id="tTo" placeholder="Укажите место на карте" readonly></label>
             <button class="taxi-point-btn" id="btnToMap" aria-label="Выбрать пункт назначения на карте" title="Выбрать пункт назначения на карте" onclick="startSelectPoint('to')">🗺</button>
         </div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:10px;text-align:center;line-height:1.45;"><b style="color:var(--text);">Как поставить точку:</b> нажмите значок <b>🗺</b> у нужного поля («Откуда» или «Куда»), затем <b>коснитесь карты</b> в нужном месте.<br><span style="font-size:11px;">📍 — геолокация только для «Откуда»</span></div>
+        <div class="wood-taxi-strip">
+            <div><svg class="wood-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m2 8 10-5 10 5-10 5zM2 12l10 5 10-5M2 16l10 5 10-5"/></svg><span><small>Тариф</small><b id="woodTaxiRate">—</b></span></div>
+            <div aria-hidden="true"><svg class="wood-icon" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M4 8h16M8 12h1m6 0h1m-8 5h1m6 0h1"/></svg><span><small>Стоимость</small><b id="woodTaxiPrice">—</b></span></div>
+            <div aria-hidden="true"><svg class="wood-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span><small>Время в пути</small><b id="woodTaxiTime">—</b></span></div>
+        </div>
       </div>
       <aside class="card wood-order-aside">
         <h2 class="card-title"><svg class="wood-icon wood-icon-car" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m4 11 2-6h12l2 6M4 11h16l1 3v5h-3v-2H6v2H3v-5zM7 14h.01M17 14h.01"/></svg> Ваш заказ</h2>
         <div class="wood-route-summary">
-            <div><span class="wood-point-letter" aria-hidden="true">А</span><div><small>Точка посадки</small><strong id="woodTaxiFrom">Выберите точку посадки</strong></div></div>
-            <div><span class="wood-point-letter" aria-hidden="true">Б</span><div><small>Пункт назначения</small><strong id="woodTaxiTo">Выберите пункт назначения</strong></div></div>
+            <div class="wood-taxi-stops">
+                <div><span class="wood-point-letter" aria-hidden="true">А</span><div><small>Точка посадки</small><strong id="woodTaxiFrom">Выберите точку посадки</strong></div></div>
+                <div><span class="wood-point-letter" aria-hidden="true">Б</span><div><small>Пункт назначения</small><strong id="woodTaxiTo">Выберите пункт назначения</strong></div></div>
+            </div>
+            <div id="taxiInfoRow" class="wood-taxi-estimate">
+                <div><svg class="wood-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m2 8 10-5 10 5-10 5zM2 12l10 5 10-5M2 16l10 5 10-5"/></svg><div><small>Примерная стоимость</small><strong id="tPrice" aria-live="polite">—</strong></div></div>
+                <div><svg class="wood-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><div><small>Время в пути</small><strong id="tTime">—</strong></div></div>
+                <p id="woodTaxiDistance" hidden>По прямой <span id="tDist"></span> км</p>
+            </div>
+            <p class="wood-taxi-status" id="v9FareMethod" role="status"></p>
         </div>
-        <div class="taxi-info-row" id="taxiInfoRow" style="display:none;">
-            <div class="taxi-info-box"><div class="tiv" id="tDist">—</div><div class="til">км</div></div>
-            <div class="taxi-info-box"><div class="tiv" id="tTime">—</div><div class="til">мин</div></div>
-            <div class="taxi-info-box"><div class="tiv" id="tPrice">—</div><div class="til">рублей</div></div>
-        </div>
-        <button class="btn btn-primary" id="btnCallTaxi" onclick="orderTaxi()" disabled>🛵 Вызвать такси</button>
+        <button class="btn btn-primary" id="btnCallTaxi" onclick="orderTaxi()" disabled><svg class="wood-icon wood-icon-car" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m4 11 2-6h12l2 6M4 11h16l1 3v5h-3v-2H6v2H3v-5zM7 14h.01M17 14h.01"/></svg> Вызвать такси</button>
       </aside>
+      <p class="wood-taxi-help">Укажите на карте точку посадки, затем пункт назначения. Для точки посадки можно использовать геолокацию.</p>
     </div>
     <div id="taxiDebtNotice"></div>
     <div id="taxiStatus"></div>
@@ -2935,7 +2945,7 @@ window.kapaniLoadLeaflet = (function(){
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8" defer></script>
 <script src="./assets/supabase-bridge-classic.js?v=39" defer></script>
 <script src="./assets/kapani-onboarding.js?v=38" defer></script>
-<script src="./assets/kapani-main-classic.js?v=43" defer></script>
+<script src="./assets/kapani-main-classic.js?v=44" defer></script>
 
 <script>
 // ═══════════════════════════════════════════════════
@@ -4254,7 +4264,7 @@ window.kapaniLoadLeaflet = (function(){
 </script>
 <script src="./assets/kapani-ui.js?v=43" defer></script>
 <script src="./assets/kapani-icons.js?v=39" defer></script>
-<script src="./assets/kapani-woodland.js?v=1" defer></script>
+<script src="./assets/kapani-woodland.js?v=2" defer></script>
 <script src="./assets/kapani-season-classic.js" defer></script>
 <script src="./assets/kapani-finishes.js?v=43" defer></script>
 </body>

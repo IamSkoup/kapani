@@ -195,7 +195,6 @@
   const taxiFrom = byId('tFrom');
   const taxiTo = byId('tTo');
   const taxiSteps = byId('woodTaxiSteps');
-  const taxiInfo = byId('taxiInfoRow');
   const taxiSubmit = byId('btnCallTaxi');
 
   function refreshTaxi() {
@@ -208,7 +207,6 @@
   // App-owned map/geocoder updates emit this event after changing the input values.
   byId('taxiForm').addEventListener('input', refreshTaxi);
   new MutationObserver(refreshTaxi).observe(taxiSubmit, {attributes: true, attributeFilter: ['disabled']});
-  new MutationObserver(refreshTaxi).observe(taxiInfo, {attributes: true, attributeFilter: ['style']});
   refreshTaxi();
 
   const source = byId('deliveryOrderSource');
