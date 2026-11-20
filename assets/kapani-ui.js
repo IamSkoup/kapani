@@ -192,10 +192,10 @@
     document.body.appendChild(drawer);
     const close = () => { drawer.hidden = true; more.focus(); };
     const links = [
-      ['Задания','tasks'], ['Новости','news'], ['Плюс','subscription'],
+      ['Задания','tasks'], ['Банк','bank'], ['Новости','news'], ['Плюс','subscription'],
       ['Бизнесы','businesses'], ['Здания','rentBuildings'], ['Мероприятия','events'],
       ['Работа','jobs'], ['Такси','taxi'], ['Доставка','deliveryOrderPage'],
-      ['КВЭ','kveExam'], ['Уборщик','janitorPage'],
+      ['КВЭ','kveExam'], ['Уборщик','janitorPage'], ['О Капанях', () => window.openInfoModal()],
       ['KapaniGPT','https://kapanigpt.netlify.app/'],
       ['Фильмы KapaniPride','https://iamskoup.github.io/kapanipride']
     ];
@@ -214,7 +214,8 @@
         button.textContent = label;
         button.addEventListener('click', () => {
           drawer.hidden = true;
-          if (id.startsWith('https://')) window.open(id, '_blank', 'noopener,noreferrer');
+          if (typeof id === 'function') id();
+          else if (id.startsWith('https://')) window.open(id, '_blank', 'noopener,noreferrer');
           else window.navTo(id);
         });
         list.appendChild(button);

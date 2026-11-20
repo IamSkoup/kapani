@@ -3006,7 +3006,9 @@ if(!window._kapaniPushSwMessageBound&&'serviceWorker' in navigator){window._kapa
     // Notification click while the site is already open: navigate in-app, no page reload.
     if(type==='KAPANI_NOTIFICATION_CLICK'){try{handleKapaniPushDeepLink(event.data.url||'');}catch(e){console.debug('[Kapani Push] click route:',e);}}
 });}
-function makeSw(isOn,fn){const bg=isOn?'var(--primary)':'var(--surface2)';const bdr=isOn?'var(--primary)':'var(--border)';const knob=isOn?'right:3px;background:#080507':'left:3px;background:var(--muted)';return `<div onclick="${fn}" style="cursor:pointer;min-width:48px;width:48px;height:28px;border-radius:14px;background:${bg};border:2px solid ${bdr};transition:.25s;position:relative;flex-shrink:0;"><div style="position:absolute;top:3px;${knob};width:18px;height:18px;border-radius:50%;transition:.25s;box-shadow:0 1px 4px rgba(0,0,0,.4);"></div></div>`;}
+function makeSw(isOn, handler, labelId, disabled = false) {
+    return `<button type="button" class="wood-push-switch" role="switch" aria-checked="${isOn}" aria-labelledby="${labelId}" onclick="${handler}" ${disabled?'disabled':''}><span aria-hidden="true"></span></button>`;
+}
 function updatePushSettingsUI(){
     const container=qs('pushSettingsContainer'),btn=qs('pushEnableBtn'),statusTxt=qs('pushStatusText');
     if(!container) return;
@@ -3038,7 +3040,20 @@ function updatePushSettingsUI(){
         {id:'system',label:'⚙️ Система',desc:'Мэрия, должности'}
     ];
     container.style.display='block';
-    container.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:2px solid var(--border);margin-bottom:2px;"><div><div style="font-weight:900;font-size:14px;">🔔 Все уведомления</div><div style="font-size:11px;color:var(--muted);">Главный переключатель</div></div>${makeSw(masterOn,"toggleMasterPush()")}</div>`+cats.map(c=>{const catOn=masterOn&&getPushPrefs()[c.id]!==false;const rowOp=masterOn?'':'opacity:.45;pointer-events:none;';return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);${rowOp}"><div><div style="font-weight:800;font-size:13px;">${c.label}</div><div style="font-size:11px;color:var(--muted);">${c.desc}</div></div>${makeSw(catOn,"togglePushCat('"+c.id+"')")}</div>`;}).join('');
+    const focusedSwitch = document.activeElement?.getAttribute('aria-labelledby');
+    const masterLabel = 'woodPushMasterLabel';
+    const row = (id, label, description, toggle) => `<div class="wood-push-setting"><div><div id="${id}">${label}</div><small>${description}</small></div>${toggle}</div>`;
+    container.innerHTML = row(masterLabel, '🔔 Все уведомления', 'Включайте и выключайте push-оповещения', makeSw(masterOn, 'toggleMasterPush()', masterLabel)) +
+        cats.map(category => {
+            const id = 'woodPushLabel_' + category.id;
+            const enabled = masterOn && getPushPrefs()[category.id] !== false;
+            return row(id, category.label, category.desc, makeSw(enabled, "togglePushCat('" + category.id + "')", id, !masterOn));
+        }).join('');
+    if (focusedSwitch) {
+        const previous = Array.from(container.querySelectorAll('[role="switch"]'))
+            .find(button => button.getAttribute('aria-labelledby') === focusedSwitch);
+        previous?.focus({preventScroll:true});
+    }
 }
 
 window.getKapaniPushDiagnostics = async function(){
@@ -4393,12 +4408,12 @@ window.initTaxiMap=async function(){
     })();
     try{return await taxiMapInitPromise;}finally{taxiMapInitPromise=null;}
 };
-function onMapClick(e){if(!selectingPoint)return;const{lat,lng}=e.latlng;if(selectingPoint==='from'){setFromPoint(lat,lng);reverseGeocode(lat,lng).then(name=>{qs('tFrom').value=name;});}else{setToPoint(lat,lng);reverseGeocode(lat,lng).then(name=>{qs('tTo').value=name;});}selectingPoint=null;qs('btnFromMap').classList.remove('selecting');qs('btnToMap').classList.remove('selecting');}
-function setFromPoint(lat,lng){fromCoords={lat,lng};if(fromMarker)taxiMap.removeLayer(fromMarker);fromMarker=L.marker([lat,lng],{icon:L.divIcon({html:'<div style="background:#f0444a;width:14px;height:14px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>',iconSize:[14,14],iconAnchor:[7,7]})}).addTo(taxiMap).bindPopup('📍 Откуда');updateTaxiCalc();}
-function setToPoint(lat,lng){toCoords={lat,lng};if(toMarker)taxiMap.removeLayer(toMarker);toMarker=L.marker([lat,lng],{icon:L.divIcon({html:'<div style="background:#ff806a;width:14px;height:14px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>',iconSize:[14,14],iconAnchor:[7,7]})}).addTo(taxiMap).bindPopup('🏁 Куда');updateTaxiCalc();}
+function onMapClick(e){if(!selectingPoint)return;const{lat,lng}=e.latlng;if(selectingPoint==='from'){setFromPoint(lat,lng);reverseGeocode(lat,lng).then(name=>{qs('tFrom').value=name;qs('tFrom').dispatchEvent(new Event('input',{bubbles:true}));});}else{setToPoint(lat,lng);reverseGeocode(lat,lng).then(name=>{qs('tTo').value=name;qs('tTo').dispatchEvent(new Event('input',{bubbles:true}));});}selectingPoint=null;qs('btnFromMap').classList.remove('selecting');qs('btnToMap').classList.remove('selecting');}
+function setFromPoint(lat,lng){fromCoords={lat,lng};if(fromMarker)taxiMap.removeLayer(fromMarker);fromMarker=L.marker([lat,lng],{icon:L.divIcon({className:'wood-map-pin',html:'<span>А</span>',iconSize:[34,34],iconAnchor:[17,17]})}).addTo(taxiMap).bindPopup('📍 Откуда');updateTaxiCalc();}
+function setToPoint(lat,lng){toCoords={lat,lng};if(toMarker)taxiMap.removeLayer(toMarker);toMarker=L.marker([lat,lng],{icon:L.divIcon({className:'wood-map-pin',html:'<span>Б</span>',iconSize:[34,34],iconAnchor:[17,17]})}).addTo(taxiMap).bindPopup('🏁 Куда');updateTaxiCalc();}
 function updateTaxiCalc(){if(!fromCoords||!toCoords)return;const dist=haversine(fromCoords.lat,fromCoords.lng,toCoords.lat,toCoords.lng);const price=Math.round(dist*PRICE_PER_KM);const timeMin=Math.ceil(dist/MAX_SPEED_KMH*60);qs('tDist').textContent=dist.toFixed(1);qs('tTime').textContent=timeMin;qs('tPrice').textContent=price;qs('taxiInfoRow').style.display='flex';qs('btnCallTaxi').disabled=false;if(routeLine)taxiMap.removeLayer(routeLine);routeLine=L.polyline([[fromCoords.lat,fromCoords.lng],[toCoords.lat,toCoords.lng]],{color:'#f0444a',weight:3,dashArray:'6,6'}).addTo(taxiMap);taxiMap.fitBounds([[fromCoords.lat,fromCoords.lng],[toCoords.lat,toCoords.lng]],{padding:[30,30]});}
 window.startSelectPoint=function(which){selectingPoint=which;qs('btnFromMap').classList.toggle('selecting',which==='from');qs('btnToMap').classList.toggle('selecting',which==='to');toast(which==='from'?'📍 Кликните — отправление':'🏁 Кликните — назначение','gold');};
-window.detectMyLocation=function(){if(!navigator.geolocation)return toast('❌ Геолокация недоступна','red');toast('📍 Определяем...','gold');navigator.geolocation.getCurrentPosition(pos=>{const{latitude:lat,longitude:lng}=pos.coords;setFromPoint(lat,lng);reverseGeocode(lat,lng).then(name=>{qs('tFrom').value=name;});taxiMap.setView([lat,lng],16);},()=>toast('❌ Нет геолокации','red'));};
+window.detectMyLocation=function(){if(!navigator.geolocation)return toast('❌ Геолокация недоступна','red');toast('📍 Определяем...','gold');navigator.geolocation.getCurrentPosition(pos=>{const{latitude:lat,longitude:lng}=pos.coords;setFromPoint(lat,lng);reverseGeocode(lat,lng).then(name=>{qs('tFrom').value=name;qs('tFrom').dispatchEvent(new Event('input',{bubbles:true}));});taxiMap.setView([lat,lng],16);},()=>toast('❌ Нет геолокации','red'));};
 async function reverseGeocode(lat,lon){try{const res=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=ru`);const d=await res.json();if(d&&d.address){const a=d.address;return[a.road||a.pedestrian||a.hamlet,a.village||a.town||a.city||a.suburb].filter(Boolean).join(', ')||d.display_name.split(',').slice(0,2).join(', ');}}catch(e){}return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;}
 window.geocodeFrom=async function(){const q=qs('tFrom').value.trim();if(!q)return;const c=await geocodeAddress(q);if(c){setFromPoint(c.lat,c.lon);taxiMap.setView([c.lat,c.lon],15);}else toast('❌ Адрес не найден','red');};
 window.geocodeTo=async function(){const q=qs('tTo').value.trim();if(!q)return;const c=await geocodeAddress(q);if(c){setToPoint(c.lat,c.lon);taxiMap.setView([c.lat,c.lon],15);}else toast('❌ Адрес не найден','red');};
@@ -5203,8 +5218,10 @@ window.submitAtmRequest = async function(){
 window.renderFinancialStats=async function(){
     let all;
     try{all=await getAccountTransactions();}
-    catch(e){console.error('[bank stats]',e);['monthlyStats','totalStats'].forEach(id=>{if(qs(id))qs(id).textContent='Не удалось загрузить статистику';});return;}
+    catch(e){console.error('[bank stats]',e);window.kapaniPaintBankWeek?.(null);['monthlyStats','totalStats'].forEach(id=>{if(qs(id))qs(id).textContent='Не удалось загрузить статистику';});return;}
     
+
+    window.kapaniPaintBankWeek?.(all);
     // Группировка по месяцам
     const byMonth={};
     all.forEach(tx=>{
@@ -6307,7 +6324,7 @@ window.renderTasks = async function(){
         // never block the task screen on serial transactions/logging.
         const taskBalanceEl = qs('taskBalanceDisplay');
         if(taskBalanceEl) taskBalanceEl.textContent = `${Math.max(0, Number(u.taskBalance||0)).toLocaleString('ru-RU')} ₽`;
-        el.innerHTML = `${primeDailyRows.length ? `<div class="task-group" style="margin-top:0;"><div class="task-group-title" style="color:var(--gold);">👑 Kapani Prime — эксклюзивные задания</div>${primeDailyRows.map(primeDailyRow).join('')}</div>` : ''}<div class="task-group"><div class="task-group-title">📅 Ежедневные (обновляются каждый день)</div>${dailyRows.map(dailyRow).join('')}</div><div class="task-group" style="margin-top:0;"><div class="task-group-title">⭐ Одноразовые</div>${oneTimeTasks.map(oneTimeRow).join('')}</div>`;
+        el.innerHTML = `${primeDailyRows.length ? `<div class="task-group" style="margin-top:0;"><div class="task-group-title" style="color:var(--gold);">👑 Kapani Prime — эксклюзивные задания</div>${primeDailyRows.map(primeDailyRow).join('')}</div>` : ''}<div class="task-group"><div class="task-group-title">📅 Ежедневные задания</div>${dailyRows.map(dailyRow).join('')}</div><div class="task-group" style="margin-top:0;"><div class="task-group-title">⭐ Одноразовые задания</div>${oneTimeTasks.map(oneTimeRow).join('')}</div>`;
 
         // Prime Daily Tasks are automatically claimed once their condition is met.
         // The existing creditTaskRewardOnce transaction remains the idempotency guard.
@@ -14482,7 +14499,7 @@ window.kpDescribeJob=i=>{const panel=qs('v8ProfessionInfo'),close=describedJob==
 window.kpProfileSettings=()=>{const settings=allUsersCache[currentNick]?.settings||{};modal('Настройки профиля',`<div class="v8-settings"><label>Размер текста<select id="v8TextSize"><option value="normal">Обычный</option><option value="large">Крупный</option></select></label><label class="v8-switch"><span>Уменьшить анимации<small>Спокойные переходы и экономия заряда</small></span><input type="checkbox" id="v8Motion" ${settings.reduceMotion?'checked':''}></label><label class="v8-switch"><span>Компактные сообщения<small>Больше текста на экране</small></span><input type="checkbox" id="v8Compact" ${settings.compactChat?'checked':''}></label><label class="v8-switch"><span>Экономить трафик<small>Видео загружается только после нажатия</small></span><input type="checkbox" id="v8Data" ${settings.saveData!==false?'checked':''}></label><label class="v8-switch"><span>Звук казино<small>Включается вручную в игровом зале</small></span><input type="checkbox" id="v8Sound" ${settings.casinoSound?'checked':''}></label><label>О себе<textarea id="v8About" maxlength="400">${html(allUsersCache[currentNick]?.bio||'')}</textarea></label></div>${button('Сохранить','kpSaveSettings()')}`);qs('v8TextSize').value=settings.textSize||'normal';};
 function applySettings(settings={}){document.documentElement.classList.toggle('v8-large',settings.textSize==='large');document.documentElement.classList.toggle('v8-reduce-motion',!!settings.reduceMotion);document.documentElement.classList.toggle('v8-compact',!!settings.compactChat);}
 window.kpSaveSettings=()=>action('settings',async()=>{const settings={...(allUsersCache[currentNick]?.settings||{}),textSize:qs('v8TextSize').value,reduceMotion:qs('v8Motion').checked,compactChat:qs('v8Compact').checked,saveData:qs('v8Data').checked,casinoSound:qs('v8Sound').checked};await update(userRef(currentNick),{settings,bio:qs('v8About').value.trim()});applySettings(settings);window.kpCloseSheet();toast('Настройки сохранены','green');});
-const profile=qs('profile');if(profile){const el=document.createElement('div');el.className='v8-profile-actions';el.innerHTML=button('Настройки профиля','kpProfileSettings()','btn btn-ghost')+button('Изменить оформление','openProfileCustomizer()','btn btn-ghost');profile.querySelector('.profile-header')?.after(el);}applySettings(allUsersCache[currentNick]?.settings);
+const profile=qs('profile');if(profile){const el=document.createElement('div');el.className='v8-profile-actions';el.innerHTML=button('Редактировать профиль','kpProfileSettings()','btn btn-ghost')+button('Изменить оформление','openProfileCustomizer()','btn btn-ghost');profile.querySelector('.profile-header')?.after(el);}applySettings(allUsersCache[currentNick]?.settings);
 
 // A receipt is shown only after a confirmed server response. A retry reuses ID.
 window.doTransfer=()=>action('bank-transfer',async()=>{
@@ -14508,7 +14525,6 @@ window.doTransfer=()=>action('bank-transfer',async()=>{
   void renderRecentTransfers();void renderFinancialStats();
   modal('Перевод выполнен',`<div class="v8-receipt"><div class="v8-success"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M16 33l11 11 23-25"/></svg></div><span class="v8-eyebrow">Капани Банк</span><h2>${money(amount)}</h2><p>Получатель: ${html(typeof recipient==='object'?displayNick(recipient):nick)}</p><dl><dt>Статус</dt><dd>Выполнен</dd><dt>Комиссия</dt><dd>${data.commission!=null?money(data.commission):'Учтена в операции'}</dd><dt>Дата</dt><dd>${html(journalRecord.date||new Date().toLocaleDateString('ru-RU'))} ${html(journalRecord.time||'')}</dd><dt>Номер операции</dt><dd class="v8-op-id">${html(id)}</dd></dl>${button('Готово','kpCloseSheet()')}</div>`);
 });
-const bank=qs('bank');if(bank){const card=document.createElement('div');card.className='v8-bank-card';card.innerHTML='<span>Капани Банк</span><div class="v8-eyebrow">Основной счёт</div><strong id="v8BankBalance">—</strong><footer><span>КАПАНИ · ЖИТЕЛЬ</span><span>RUB</span></footer>';bank.prepend(card);}
 
 // Marketplace: compact browse cards, complete detail view, real multi-image input.
 v8.photos=[];v8.listingPoint=null;
@@ -14567,7 +14583,7 @@ updateTaxiCalc=function(){
   });
 };
 const initMapV7=window.initTaxiMap;window.initTaxiMap=async()=>{const map=await initMapV7();if(!fromCoords){selectingPoint='from';qs('btnFromMap')?.classList.add('selecting');}return map;};
-onMapClick=function(e){const {lat,lng}=e.latlng;if(!selectingPoint)selectingPoint=fromCoords?'to':'from';if(selectingPoint==='from'){setFromPoint(lat,lng);qs('tFrom').value=`${lat.toFixed(5)}, ${lng.toFixed(5)}`;selectingPoint='to';qs('btnFromMap').classList.remove('selecting');qs('btnToMap').classList.add('selecting');toast('Теперь отметьте на карте место назначения','green');}else{if(!fromCoords)return;setToPoint(lat,lng);qs('tTo').value=`${lat.toFixed(5)}, ${lng.toFixed(5)}`;selectingPoint=null;qs('btnToMap').classList.remove('selecting');}};
+onMapClick=function(e){const {lat,lng}=e.latlng;if(!selectingPoint)selectingPoint=fromCoords?'to':'from';if(selectingPoint==='from'){setFromPoint(lat,lng);qs('tFrom').value=`${lat.toFixed(5)}, ${lng.toFixed(5)}`;qs('tFrom').dispatchEvent(new Event('input',{bubbles:true}));selectingPoint='to';qs('btnFromMap').classList.remove('selecting');qs('btnToMap').classList.add('selecting');toast('Теперь отметьте на карте место назначения','green');}else{if(!fromCoords)return;setToPoint(lat,lng);qs('tTo').value=`${lat.toFixed(5)}, ${lng.toFixed(5)}`;qs('tTo').dispatchEvent(new Event('input',{bubbles:true}));selectingPoint=null;qs('btnToMap').classList.remove('selecting');}};
 async function notifyTaxiDriversOfOrder(order){
   try{
     const users=(await get(ref(db,'users'))).val()||{};
@@ -14645,7 +14661,7 @@ window.renderDeliveryOrderOptions=renderDeliveryOrderOptions=async function(forc
   let host=qs('v8DeliveryCatalog');
   if(!host){host=document.createElement('div');host.id='v8DeliveryCatalog';}
   // The order form stays first: a thousand listings must never push it away.
-  const orderForm=page.querySelector('.card');
+  const orderForm=page.querySelector(':scope > .wood-order-layout');
   if(orderForm&&host.previousElementSibling!==orderForm)orderForm.after(host);
   else if(!host.isConnected)page.append(host);
   const wasOpen=host.querySelector('details')?.open||qs('deliveryOrderSource')?.value==='marketplace';

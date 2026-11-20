@@ -1234,8 +1234,10 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 <link rel="stylesheet" href="assets/kapani-delivery-directory.css?v=38">
 <link rel="stylesheet" href="assets/kapani-casino-performance.css?v=41">
 <link rel="stylesheet" href="assets/kapani-stability.css?v=39">
+<link rel="stylesheet" href="assets/kapani-woodland.css?v=1">
 </head>
 <body>
+<div id="woodBackdrop" aria-hidden="true"></div>
 
 
 
@@ -1334,26 +1336,29 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 
 <!-- HEADER -->
 <div id="gHeader" style="display:none" class="g-header">
-    <button type="button" class="brand-lockup" onclick="navTo('home')" aria-label="Капани — главная"><strong>KAPAN<i>I</i></strong></button>
+    <button type="button" class="brand-lockup" onclick="navTo('home')" aria-label="Капани — главная"><img src="assets/kapani-firs.webp" alt="" width="48" height="48"><strong>КАПАНИ</strong></button>
+    <button type="button" id="woodSearchOpen" class="wood-search-open" aria-label="Поиск по разделам" aria-haspopup="dialog"><svg class="wood-icon wood-icon-search" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span>Поиск по сайту…</span><kbd>Ctrl + K</kbd></button>
     <div class="header-links"><button type="button" onclick="navTo('home')">Главная</button><button type="button" onclick="navTo('news')">Новости</button><button type="button" onclick="navTo('bank')">Банк</button><button type="button" id="mayorHeaderBtn" style="display:none" onclick="navTo('adminPage')">Мэрия</button><button type="button" onclick="openInfoModal()">О Капанях</button><button type="button" onclick="window.open('https://kapanigpt.netlify.app/','_blank','noopener,noreferrer')">KapaniGPT</button><button type="button" onclick="window.open('https://iamskoup.github.io/kapanipride','_blank','noopener,noreferrer')">Фильмы KapaniPride</button></div>
-    <div class="header-actions"><div class="h-left" onclick="navTo('profile')">
+    <div class="header-actions"><button type="button" class="h-left" onclick="navTo('profile')" aria-label="Открыть профиль">
         <div class="avatar-wrap" id="headerAvatarWrap">
             <img id="hAv" class="h-avatar" loading="lazy"><video id="hAvVideo" class="h-avatar" style="display:none;position:absolute;inset:0;object-fit:cover;border-radius:12px;" muted autoplay loop playsinline></video>
             <div class="online-dot" style="border-color:rgba(12,17,23,0.88)"></div>
         </div>
         <div><div class="h-name" id="hNick">...</div><div class="h-job" id="hJob">Житель</div></div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;">
-        <div class="h-notify" onclick="navTo('profile'); document.getElementById('inboxList')?.scrollIntoView({block:'center'})">🔔<span class="h-badge" id="notifyBadge"></span></div>
-        <div class="h-bal"><span id="hBal">0</span> ₽</div>
+    </button>
+    <div class="wood-header-tools">
+        <button type="button" class="h-notify" id="woodNotificationsOpen" aria-label="Уведомления"><svg class="wood-icon wood-icon-bell" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span class="h-badge" id="notifyBadge"></span></button>
+        <button type="button" class="h-bal" onclick="navTo('bank')" aria-label="Баланс и банк"><svg class="wood-icon wood-icon-coins" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v7c0 4 18 4 18 0V5M3 9c0 4 18 4 18 0M3 12v6c0 4 18 4 18 0v-6M3 15c0 4 18 4 18 0"/></svg><span><span id="hBal">0</span> ₽</span></button>
     </div></div>
 </div>
 
 <!-- BOTTOM NAV -->
-<div id="bottomNav" style="display:none;" class="bottom-nav">
+<div id="bottomNav" style="display:none;" class="bottom-nav" role="navigation" aria-label="Основные разделы">
+    <button type="button" class="wood-nav-brand" onclick="navTo('home')" aria-label="Капани — главная"><img src="assets/kapani-firs.webp" alt="" width="48" height="48"><strong>КАПАНИ</strong></button>
     <button class="bn-item sel" id="bn0" onclick="navTo('home')" aria-label="Перейти на главную страницу"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8v10h-7v-6h-4v6H3z"/></svg></span>Главная</button>
     <button class="bn-item" id="bn1" onclick="navTo('messages')" aria-label="Перейти в чаты"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v12H8l-4 3z"/></svg></span>Чаты<span class="bn-badge" id="dmBadge"></span></button>
     <button class="bn-item" id="bn2" onclick="navTo('market')" aria-label="Перейти в маркет"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2 12h12l2-9H6 M9 20h.01 M18 20h.01"/></svg></span>Маркет</button>
+    <button type="button" class="bn-item wood-taxi-nav" onclick="navTo('taxi')" aria-label="Перейти к заказу такси"><span class="ico"><svg class="wood-icon wood-icon-car" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m4 11 2-6h12l2 6M4 11h16l1 3v5h-3v-2H6v2H3v-5zM7 14h.01M17 14h.01"/></svg></span>Такси</button>
     <button class="bn-item" id="bn3" onclick="navTo('tasks')" aria-label="Перейти к заданиям"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5"/></svg></span>Задания</button>
     <button class="bn-item" id="bn4" onclick="navTo('bank')" aria-label="Перейти в банк"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h18v12H3z M3 8l3-4h12l3 4 M8 12h8"/></svg></span>Банк</button>
     <button class="bn-item" id="bn5" onclick="navTo('news')" aria-label="Перейти к новостям"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4z M8 8h8 M8 12h8 M8 16h5"/></svg></span>Новости</button>
@@ -1365,6 +1370,11 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
     <button class="bn-item" id="bn11" onclick="navTo('kveExam')" aria-label="Экзамен КВЭ" style="display:none;"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4z M8 8h8 M8 12h8 M8 16h5"/></svg></span>КВЭ<span class="bn-badge" id="kveBadge"></span></button>
 </div>
 
+<dialog id="woodSearch" class="wood-search" aria-labelledby="woodSearchTitle">
+    <div class="wood-search-heading"><h2 id="woodSearchTitle">Поиск по разделам</h2><form method="dialog"><button class="btn btn-ghost btn-sm" type="submit" aria-label="Закрыть поиск">✕</button></form></div>
+    <label class="wood-search-field"><svg class="wood-icon wood-icon-search" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input id="woodSearchInput" type="search" placeholder="Название раздела" aria-label="Название раздела" autocomplete="off"></label>
+    <div id="woodSearchResults" class="wood-search-results"></div>
+</dialog>
 <div class="container">
 
 <!-- AUTH -->
@@ -1711,26 +1721,36 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 </div>
 
 <!-- SHOP -->
-<div id="taxi" class="section" data-title="Такси">
-    <div id="taxiForm" class="card">
-        <div class="card-title">🛵 Вызов такси</div>
+<div id="taxi" class="section wood-page" data-title="Такси">
+    <header class="wood-page-heading"><h1>Такси</h1><p>Закажите такси по территории Капани.</p></header>
+    <ol class="wood-steps" id="woodTaxiSteps"><li aria-current="step"><span>1</span>Откуда</li><li><span>2</span>Куда</li><li><span>3</span>Подтвердить</li></ol>
+    <div id="taxiForm" class="wood-order-layout">
+      <div class="card wood-order-form">
         <div id="taxiMap"></div>
         <div class="taxi-point-row">
-            <input type="text" id="tFrom" placeholder="Откуда" style="margin:0;" required minlength="3" maxlength="100" onkeydown="if(event.key==='Enter')geocodeFrom()">
-            <button class="taxi-point-btn" id="btnFromGeo" onclick="detectMyLocation()">📍</button>
-            <button class="taxi-point-btn" id="btnFromMap" onclick="startSelectPoint('from')">🗺</button>
+            <span class="wood-point-letter" aria-hidden="true">А</span><input type="text" id="tFrom" aria-label="Откуда, точка посадки" placeholder="Откуда — точка посадки" style="margin:0;" required minlength="3" maxlength="100" onkeydown="if(event.key==='Enter')geocodeFrom()">
+            <button class="taxi-point-btn" id="btnFromGeo" aria-label="Моё местоположение" title="Моё местоположение" onclick="detectMyLocation()">📍</button>
+            <button class="taxi-point-btn" id="btnFromMap" aria-label="Выбрать точку посадки на карте" title="Выбрать точку посадки на карте" onclick="startSelectPoint('from')">🗺</button>
         </div>
         <div class="taxi-point-row">
-            <input type="text" id="tTo" placeholder="Куда" style="margin:0;" required minlength="3" maxlength="100" onkeydown="if(event.key==='Enter')geocodeTo()">
-            <button class="taxi-point-btn" id="btnToMap" onclick="startSelectPoint('to')">🗺</button>
+            <span class="wood-point-letter" aria-hidden="true">Б</span><input type="text" id="tTo" aria-label="Куда, пункт назначения" placeholder="Куда — пункт назначения" style="margin:0;" required minlength="3" maxlength="100" onkeydown="if(event.key==='Enter')geocodeTo()">
+            <button class="taxi-point-btn" id="btnToMap" aria-label="Выбрать пункт назначения на карте" title="Выбрать пункт назначения на карте" onclick="startSelectPoint('to')">🗺</button>
         </div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:10px;text-align:center;line-height:1.45;"><b style="color:var(--text);">Как поставить точку:</b> нажмите значок <b>🗺</b> у нужного поля («Откуда» или «Куда»), затем <b>коснитесь карты</b> в нужном месте.<br><span style="font-size:11px;">📍 — геолокация только для «Откуда»</span></div>
+      </div>
+      <aside class="card wood-order-aside">
+        <h2 class="card-title"><svg class="wood-icon wood-icon-car" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m4 11 2-6h12l2 6M4 11h16l1 3v5h-3v-2H6v2H3v-5zM7 14h.01M17 14h.01"/></svg> Ваш заказ</h2>
+        <div class="wood-route-summary">
+            <div><span class="wood-point-letter" aria-hidden="true">А</span><div><small>Точка посадки</small><strong id="woodTaxiFrom">Выберите точку посадки</strong></div></div>
+            <div><span class="wood-point-letter" aria-hidden="true">Б</span><div><small>Пункт назначения</small><strong id="woodTaxiTo">Выберите пункт назначения</strong></div></div>
+        </div>
         <div class="taxi-info-row" id="taxiInfoRow" style="display:none;">
             <div class="taxi-info-box"><div class="tiv" id="tDist">—</div><div class="til">км</div></div>
             <div class="taxi-info-box"><div class="tiv" id="tTime">—</div><div class="til">мин</div></div>
             <div class="taxi-info-box"><div class="tiv" id="tPrice">—</div><div class="til">рублей</div></div>
         </div>
-        <button class="btn btn-gold" id="btnCallTaxi" onclick="orderTaxi()" disabled>🛵 Вызвать такси</button>
+        <button class="btn btn-primary" id="btnCallTaxi" onclick="orderTaxi()" disabled>🛵 Вызвать такси</button>
+      </aside>
     </div>
     <div id="taxiDebtNotice"></div>
     <div id="taxiStatus"></div>
@@ -1741,14 +1761,20 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 </div>
 
 <!-- BANK -->
-<div id="bank" class="section" data-title="Банк">
-    <div class="card">
+<div id="bank" class="section wood-page" data-title="Банк">
+    <header class="wood-page-heading"><h1>Банк</h1><p>Храните, накапливайте и переводите деньги другим жителям.</p></header>
+    <section class="wood-bank-balances" aria-label="Банковские счета">
+        <div class="card wood-account"><svg class="wood-icon wood-icon-coins" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v7c0 4 18 4 18 0V5M3 9c0 4 18 4 18 0M3 12v6c0 4 18 4 18 0v-6M3 15c0 4 18 4 18 0"/></svg><h2>Основной счёт</h2><strong id="v8BankBalance">0 ₽</strong></div>
+        <div class="card wood-account"><svg class="wood-icon wood-icon-layers" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m2 7 10-5 10 5-10 5zM2 12l10 5 10-5M2 17l10 5 10-5"/></svg><h2>Накопительный счёт</h2><strong id="woodSavingsBalance">0 ₽</strong><span id="woodSavingsRate" class="wood-pill"></span></div>
+    </section>
+    <div class="card wood-bank-transfer">
         <div class="card-title">💸 Перевод денег</div>
+        <p class="wood-panel-note">Отправляйте средства другим жителям.</p>
         <input type="text" id="bTo" placeholder="Имя получателя (отображаемое имя)" autocomplete="off" required minlength="2" maxlength="40">
         <input type="number" id="bAmt" placeholder="Сумма (₽)" required min="1" step="1">
         <button class="btn btn-primary" onclick="doTransfer()">Отправить</button>
     </div>
-    <div class="card" style="border-color:rgba(255,128,106,.25);background:rgba(255,128,106,.04);">
+    <div class="card wood-bank-savings">
         <div class="card-title">📈 Накопительный счёт</div>
         <div class="kp-savings-summary">
             <div class="kp-savings-balance">
@@ -1765,17 +1791,20 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
         </div>
         <p id="savingsOperationStatus" class="kp-savings-status" role="status" aria-live="polite"></p>
     </div>
-    <div class="card">
+    <div class="card wood-bank-history">
         <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
             <span>📋 Последние переводы</span>
-            <span style="cursor:pointer;color:var(--primary);font-size:12px;font-weight:800;text-transform:none;" onclick="openHistoryModal()">Вся история →</span>
+            <button class="btn btn-ghost btn-sm" type="button" onclick="openHistoryModal()">Вся история →</button>
         </div>
         <div id="txHistory"><div style="color:var(--muted);font-size:13px;">Пока пусто...</div></div>
     </div>
-    <div class="card">
-        <div class="card-title">📊 Статистика доходов и расходов</div>
-        <div id="monthlyStats" style="margin-bottom:12px;"><div style="color:var(--muted);font-size:13px;">Загрузка...</div></div>
-        <div id="totalStats"><div style="color:var(--muted);font-size:13px;">Загрузка...</div></div>
+    <div class="card wood-bank-stats">
+        <h2 class="card-title">📊 Доходы и расходы за неделю</h2>
+        <div id="woodBankWeek"><p class="wood-panel-note">Загружаем операции…</p></div>
+        <details><summary>Статистика за всё время</summary>
+            <div id="monthlyStats" style="margin-bottom:12px;"><div style="color:var(--muted);font-size:13px;">Загрузка...</div></div>
+            <div id="totalStats"><div style="color:var(--muted);font-size:13px;">Загрузка...</div></div>
+        </details>
     </div>
 </div>
 
@@ -1802,23 +1831,24 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 </div>
 
 <!-- SUBSCRIPTION -->
-<div id="subscription" class="section" data-title="Подписка">
-    <div class="card">
-        <div class="card-title">⭐ Подписка Kapani</div>
-        <div style="text-align:center;margin-bottom:20px;">
+<div id="subscription" class="section wood-page" data-title="Подписка">
+    <header class="wood-page-heading"><h1>Подписка</h1><p>Выберите тариф и управляйте своей подпиской.</p></header>
+    <div class="card wood-sub-status">
+        <svg class="wood-icon wood-icon-crown" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m2 7 6 4 4-7 4 7 6-4-3 13H5z"/></svg>
+        <div>
             <div style="font-size:14px;color:var(--muted);margin-bottom:8px;">Ваш текущий статус:</div>
             <div id="currentSubscription" style="font-size:18px;font-weight:900;color:var(--primary);">Загрузка...</div>
             <div id="subscriptionExpiry" style="font-size:12px;color:var(--muted);margin-top:4px;"></div>
         </div>
     </div>
-    <div class="card" style="background:rgba(240,68,74,.06);border-color:rgba(240,68,74,.18);">
+    <div class="card wood-sub-terms">
         <div class="card-title">💳 Абонентская плата аккаунта</div>
         <div style="font-size:13px;line-height:1.55;color:var(--text);">
             15 ₽ списываются автоматически <b>каждую неделю</b> за наличие аккаунта.
             Если баланс уходит в минус, такси и маркетплейс блокируются до погашения долга.
         </div>
     </div>
-    <div class="card" style="background:rgba(248,113,113,.05);border-color:rgba(248,113,113,.2);">
+    <div class="card wood-sub-taxes">
         <div class="card-title" style="color:var(--red);">🧾 Налоги на имущество</div>
         <div style="font-size:13px;line-height:1.7;color:var(--text);">
             Каждую неделю вместе с абонентской платой автоматически списывается <b style="color:var(--red);">налог на богатство</b>:
@@ -1837,9 +1867,13 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
                 <span style="color:var(--muted);">Более 100 000 ₽</span><b style="color:var(--red);">25%</b>
             </div>
         </div>
-        <div id="taxNextInfo" style="font-size:12px;color:var(--muted);padding:10px;background:var(--surface2);border-radius:10px;border:1px solid var(--border);margin-top:4px;">Загрузка расписания...</div>
     </div>
     
+    <div class="card wood-sub-next">
+        <h2 class="card-title">📅 Следующее списание</h2>
+        <div id="taxNextInfo" style="font-size:12px;color:var(--muted);padding:10px;background:var(--surface2);border-radius:10px;border:1px solid var(--border);margin-top:4px;">Загрузка расписания...</div>
+    </div>
+
     <!-- Kapani Plus -->
     <div class="card subscription-plan plan-plus" style="border:2px solid var(--gold);background:linear-gradient(145deg,rgba(255,128,106,.1),transparent);">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
@@ -1941,10 +1975,16 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 </div>
 
 <!-- PROFILE -->
-<div id="profile" class="section" data-title="Профиль">
+<div id="profile" class="section wood-page" data-title="Профиль">
+    <header class="wood-page-heading wood-profile-heading"><h1>Профиль</h1></header>
+    <header class="wood-page-heading wood-activity-heading" hidden>
+        <h1 tabindex="-1">Уведомления и активность</h1>
+        <p>Ваши уведомления, настройки push-оповещений и личная лента.</p>
+        <button type="button" class="btn btn-ghost btn-sm" id="woodActivityBack">← Вернуться в профиль</button>
+    </header>
     <div class="profile-header" id="profileHeaderBg">
         <div id="profileBgEffect" style="position:absolute;inset:0;pointer-events:none;z-index:-1;overflow:hidden;border-radius:var(--r);"></div>
-        <div style="position:relative;z-index:1;">
+        <div class="wood-profile-identity" style="position:relative;z-index:1;">
             <div id="avatarFrameContainer" style="position:relative;display:inline-block;">
                 <img id="uAv" class="p-av" style="cursor:pointer;position:relative;z-index:1;" onclick="openImgViewer(this.src)" title="Открыть в полный экран (можно увеличить)">
                 <div id="avatarFrame" style="position:absolute;inset:-6px;border-radius:32px;pointer-events:none;z-index:2;display:none;"></div>
@@ -1982,7 +2022,10 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
         </div>
     </div>
     <div class="card">
-        <div class="card-title">🔔 Уведомления <span style="float:right;cursor:pointer;color:var(--muted);font-size:11px;font-weight:600;text-transform:none;" onclick="clearAllNotifications()">Очистить</span></div>
+        <div class="card-title wood-inbox-heading"><span>🔔 Уведомления</span>
+            <button type="button" class="btn btn-ghost btn-sm" id="woodActivityOpen">Все уведомления →</button>
+            <button type="button" class="btn btn-ghost btn-sm wood-inbox-clear" onclick="clearAllNotifications()">Очистить</button>
+        </div>
         <div id="inboxList"><div style="color:var(--muted);font-size:13px;">Нет уведомлений</div></div>
     </div>
     <div class="card" style="margin-bottom:14px;">
@@ -1997,6 +2040,10 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
     <div class="card">
         <div class="card-title">📰 Моя лента</div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Текст, эмодзи, фото, видео, голосовые и видеокружки — видно в вашем профиле у других.</div>
+        <div id="wallFeed"></div>
+        <details class="wood-wall-composer">
+          <summary>Новая публикация</summary>
+          <div class="wood-wall-fields">
         <div class="emoji-panel" id="wallEmojiPanel" style="display:block;max-height:120px;margin-bottom:8px;"></div>
         <textarea id="wallInput" placeholder="Что нового в Капани?" style="min-height:72px;"></textarea>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
@@ -2012,7 +2059,8 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
         </div>
         <div id="wallMediaPreview" style="display:none;margin:8px 0;font-size:12px;color:var(--primary);font-weight:800;"></div>
         <button class="btn btn-primary" style="margin-top:8px;" onclick="publishWallPost()">📤 Опубликовать</button>
-        <div id="wallFeed" style="margin-top:14px;"></div>
+          </div>
+        </details>
     </div>
 
     <button class="btn btn-ghost" onclick="logout()" style="margin-bottom:14px;color:var(--red);border-color:var(--red-dim);">🚪 Выйти</button>
@@ -2097,22 +2145,18 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 
 
 <!-- TASKS -->
-<div id="tasks" class="section" data-title="Задания">
-    <div class="card">
-        <div class="card-title">🗂 Задания</div>
-        <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px;">Одноразовые задания открывают базовые возможности, а ежедневные обновляются каждый день.</div>
-        <div class="card" style="margin:0 0 14px;padding:16px;background:rgba(240,68,74,.05);border-color:rgba(240,68,74,.25);">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;">
-                <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:800;">💰 Счёт заданий</div><div id="taskBalanceDisplay" style="font-size:25px;font-weight:900;color:var(--primary);">0 ₽</div></div>
-                <div style="font-size:11px;color:var(--muted);text-align:right;max-width:180px;line-height:1.4;">Деньги поступают только за выполнение заданий. Минимальный вывод — 500 рублей.</div>
-            </div>
-            <div style="display:flex;gap:8px;align-items:center;">
-                <input type="number" id="taskWithdrawAmt" min="500" step="1" placeholder="Сумма вывода (от 500 ₽)" style="margin:0;">
-                <button class="btn btn-primary btn-sm" onclick="withdrawTaskBalance()" style="white-space:nowrap;">Вывести</button>
-            </div>
+<div id="tasks" class="section wood-page" data-title="Задания">
+    <header class="wood-page-heading"><h1>Задания</h1><p>Выполняйте задания, получайте награды и выводите средства на свой счёт.</p></header>
+    <div class="card wood-task-wallet">
+        <div class="wood-task-metric"><svg class="wood-icon wood-icon-layers" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m2 7 10-5 10 5-10 5zM2 12l10 5 10-5M2 17l10 5 10-5"/></svg><div><span>Баланс заданий</span><strong id="taskBalanceDisplay">0 ₽</strong></div></div>
+        <div class="wood-task-metric"><svg class="wood-icon wood-icon-coins" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v7c0 4 18 4 18 0V5M3 9c0 4 18 4 18 0M3 12v6c0 4 18 4 18 0v-6M3 15c0 4 18 4 18 0"/></svg><div><span>Минимальный вывод</span><strong>500 ₽</strong></div></div>
+        <div class="wood-task-withdraw">
+            <label for="taskWithdrawAmt">Сумма вывода</label>
+            <input type="number" id="taskWithdrawAmt" min="500" step="1" placeholder="От 500 ₽">
+            <button type="button" class="btn btn-primary" onclick="withdrawTaskBalance()">Вывести</button>
         </div>
-        <div id="tasksList" class="task-section"><div style="color:var(--muted);font-size:13px;text-align:center;padding:20px 0;">Загрузка...</div></div>
     </div>
+    <div id="tasksList" class="task-section"><div class="card wood-panel-note">Загрузка…</div></div>
 </div>
 
 <!-- NEWS -->
@@ -2664,15 +2708,21 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
 </div>
 
 <!-- ДОСТАВКА ИЗ БИЗНЕСА / МАРКЕТПЛЕЙСА -->
-<div id="deliveryOrderPage" class="section" data-title="Заказать доставку">
-    <button class="btn btn-ghost btn-sm" onclick="navTo('home')" style="margin-bottom:14px;width:auto;">← Главная</button>
-    <div class="card">
-        <div class="card-title">📦 Заказать доставку</div>
-        <div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Выберите конкретный бизнес или объявление с маркетплейса, а потом укажите товар и адрес.</div>
+<div id="deliveryOrderPage" class="section wood-page" data-title="Заказать доставку">
+    <header class="wood-page-heading"><h1>Заказать доставку</h1><p>Выберите товары из бизнеса или с маркетплейса и укажите адрес доставки.</p></header>
+    <ol class="wood-steps" id="woodDeliverySteps"><li aria-current="step"><span>1</span>Выбрать источник</li><li><span>2</span>Выбрать товары</li><li><span>3</span>Указать адрес</li></ol>
+    <div class="wood-order-layout">
+      <div class="card wood-order-form">
+        <h2 class="card-title">Выберите источник</h2>
+        <label for="deliveryOrderSource" class="wood-visually-hidden">Источник товаров</label>
         <select id="deliveryOrderSource" style="margin-bottom:8px;" onchange="updateDeliverySourceHint()">
             <option value="business">🏪 Из бизнеса</option>
             <option value="marketplace">🛍 С маркетплейса</option>
         </select>
+        <div class="wood-source-buttons" role="group" aria-label="Источник товаров" hidden>
+            <button type="button" class="btn btn-ghost" data-wood-source="business">🏪 Из бизнеса</button>
+            <button type="button" class="btn btn-ghost" data-wood-source="marketplace">🛒 С маркетплейса</button>
+        </div>
         <div id="deliverySourceHint" style="font-size:12px;color:var(--primary);font-weight:800;margin-bottom:8px;padding:8px 12px;background:var(--pri-dim);border-radius:var(--r-sm);display:none;"></div>
 
         <div class="delivery-order-grid" id="deliveryBusinessBlock">
@@ -2697,19 +2747,26 @@ body.kapani-shutdown-notice-open{overflow:hidden!important;}
             </div>
         </div>
 
-        <textarea id="deliveryOrderNotes" placeholder="Комментарий для доставщика (необязательно): подъезд, время, что уточнить..." style="min-height:88px;margin-top:8px;"></textarea>
-        <button class="btn btn-ghost btn-sm" type="button" onclick="openDeliveryLocationPicker()">🗺 Выбрать точку доставки на карте</button>
-        <input type="text" id="deliveryOrderAddr" placeholder="Адрес или описание точки доставки" maxlength="150" style="margin-top:8px;">
+        <h2 class="card-title wood-delivery-address-title">📍 Укажите адрес доставки</h2>
+        <div class="wood-delivery-address">
+            <input type="text" id="deliveryOrderAddr" aria-label="Адрес доставки" placeholder="Адрес или описание точки доставки" maxlength="150">
+            <button class="btn btn-ghost btn-sm" type="button" onclick="openDeliveryLocationPicker()">🗺 Выбрать точку доставки на карте</button>
+        </div>
+        <textarea id="deliveryOrderNotes" aria-label="Комментарий для доставщика" placeholder="Комментарий для доставщика (необязательно): подъезд, время, что уточнить..." style="min-height:72px;margin-top:8px;"></textarea>
         <input type="hidden" id="deliveryOrderLat"><input type="hidden" id="deliveryOrderLng">
         <div id="deliveryLocationPreview" style="font-size:12px;color:var(--primary);margin-top:6px;"></div>
         <input type="text" id="deliveryOrderContact" placeholder="Контакт / способ связи (опционально)" maxlength="100" style="margin-top:8px;">
-        <div id="deliverySelectionSummary" class="delivery-summary" style="display:none;"></div>
         <div id="deliveryBusinessMapCard" class="card" style="display:none;margin-top:10px;padding:8px;"><div style="font-size:12px;font-weight:900;margin-bottom:7px;">🗺 Маршрут доставки</div><div id="deliveryBusinessMap" style="width:100%;height:280px;border-radius:12px;overflow:hidden;"></div><div id="deliveryBusinessMapInfo" style="margin-top:8px;font-size:13px;color:var(--muted);"></div></div>
+      </div>
+      <aside class="card wood-order-aside">
+        <h2 class="card-title">🛍 Ваш заказ</h2>
+        <div id="deliverySelectionSummary" class="delivery-summary" style="display:none;"></div>
         <div class="total-row" style="margin-top:10px;">
             <span>Стоимость доставки</span>
             <span class="total-val" style="font-size:16px;">После выбора адреса</span>
         </div>
         <button class="btn btn-primary" onclick="placeDeliveryOrder()" style="margin-top:4px;">📤 Разместить заказ на доставку</button>
+      </aside>
     </div>
     <div class="card">
         <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
@@ -2878,7 +2935,7 @@ window.kapaniLoadLeaflet = (function(){
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8" defer></script>
 <script src="./assets/supabase-bridge-classic.js?v=39" defer></script>
 <script src="./assets/kapani-onboarding.js?v=38" defer></script>
-<script src="./assets/kapani-main-classic.js?v=42" defer></script>
+<script src="./assets/kapani-main-classic.js?v=43" defer></script>
 
 <script>
 // ═══════════════════════════════════════════════════
@@ -4195,9 +4252,10 @@ window.kapaniLoadLeaflet = (function(){
   document.addEventListener('click',e=>{const target=e.target.closest('.bn-item');if(!target)return;target.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});});
 })();
 </script>
-<script src="./assets/kapani-ui.js?v=39" defer></script>
+<script src="./assets/kapani-ui.js?v=43" defer></script>
 <script src="./assets/kapani-icons.js?v=39" defer></script>
+<script src="./assets/kapani-woodland.js?v=1" defer></script>
 <script src="./assets/kapani-season-classic.js" defer></script>
-<script src="./assets/kapani-finishes.js?v=39" defer></script>
+<script src="./assets/kapani-finishes.js?v=43" defer></script>
 </body>
 </html>

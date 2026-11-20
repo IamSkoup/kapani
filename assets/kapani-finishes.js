@@ -49,6 +49,7 @@
       details.append(summary, oldButtons);
       row.after(details);
     }
+    header.appendChild(row);
   }
 
   // A rental is one protected wallet+building transaction. One request ID may
