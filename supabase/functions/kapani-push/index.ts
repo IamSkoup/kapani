@@ -12,17 +12,19 @@ const endpointAllowed=(x:string)=>{try{const h=new URL(x);return h.protocol==='h
 async function caller(req:Request){const token=/^Bearer (.+)$/i.exec(req.headers.get('authorization')||'')?.[1];if(!token)return null;const {data,error}=await admin.auth.getUser(token);if(error||!data.user)return null;const {data:p}=await admin.from('kp_profiles').select('nickname').eq('user_id',data.user.id).maybeSingle();return p?.nickname?{id:data.user.id,nick:p.nickname}:null;}
 async function targetId(name:string){const {data}=await admin.from('kp_profiles').select('user_id').eq('nickname',name).maybeSingle();return data?.user_id||null;}
 async function register(req:Request,b:Record<string,unknown>){
- const n=nick(b.nick),password=String(b.password||'');
+ const n=nick(b.nick).normalize('NFC'),password=String(b.password||'');
  if(n.length<3||n.length>30||!/^[\p{L}\p{N}_ -]+$/u.test(n))return json({error:'Ник должен содержать 3–30 букв или цифр'},400);
+ if(n.includes('__dm__'))return json({error:'Недопустимый ник'},400);
  if(password.length<8||password.length>128)return json({error:'Пароль от 8 до 128 символов'},400);
  const ip=req.headers.get('cf-connecting-ip')||req.headers.get('x-forwarded-for')?.split(',')[0]||'unknown';
  const hashed=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(ip)));
  const ipHash=[...hashed].map(i=>i.toString(16).padStart(2,'0')).join('');
- const {count,error:limitError}=await admin.from('kp_signup_attempts').select('id',{head:true,count:'exact'}).eq('ip_hash',ipHash).gte('attempted_at',new Date(Date.now()-3600000).toISOString());
+ const {data:allowed,error:limitError}=await admin.rpc('kp_consume_signup_attempt_v35',{p_ip_hash:ipHash});
  if(limitError)throw limitError;
- if((count||0)>=5)return json({error:'Не больше пяти регистраций в час'},429);
- await admin.from('kp_signup_attempts').insert({ip_hash:ipHash});
- if(await targetId(n))return json({error:'Ник занят'},409);
+ if(allowed!==true)return json({error:'Не больше пяти регистраций в час'},429);
+ const {data:reserved,error:reservationError}=await admin.rpc('kp_nickname_reserved_v35',{p_nick:n});
+ if(reservationError)throw reservationError;
+ if(reserved===true||await targetId(n))return json({error:'Ник занят или зарезервирован'},409);
  const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(n.normalize('NFC'))))].map(i=>i.toString(16).padStart(2,'0')).join('');
  const email='u'+digest.slice(0,48)+'@users.kapani.invalid';
  const created=await admin.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{nick:n}});
@@ -112,7 +114,7 @@ Deno.serve(async(req:Request)=>{
   if(req.method!=='POST')return json({error:'Use POST'},405);
   const body=await req.json().catch(()=>null);
   if(!body||typeof body!=='object'||Array.isArray(body))return json({error:'Invalid JSON'},400);
-  try{return await register(req,body);}catch(e){return json({error:String((e as Error).message||e).slice(0,250)},500);}
+  try{return await register(req,body);}catch(e){console.error('[kapani register]',e);return json({error:'Регистрация временно недоступна'},500);}
  }
  const from=await caller(req);if(!from)return json({error:'Unauthorized Supabase session'},401);
  if(req.method!=='POST')return json({error:'Use POST'},405);
